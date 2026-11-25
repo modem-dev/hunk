@@ -245,6 +245,7 @@ describe("review page server encoding and availability", () => {
 describe("review page inside the daemon", () => {
   const originalPort = process.env.HUNK_MCP_PORT;
   const originalHost = process.env.HUNK_MCP_HOST;
+  const originalHunkRuntimeDir = process.env.HUNK_RUNTIME_DIR;
   const originalRuntimeDir = process.env.XDG_RUNTIME_DIR;
   const runtime = createTestRuntimeDir("hunk-page-daemon-runtime-");
   let stop: (() => void) | undefined;
@@ -257,6 +258,7 @@ describe("review page inside the daemon", () => {
     const port = typeof address === "object" && address ? address.port : 0;
     await new Promise<void>((resolve) => listener.close(() => resolve()));
 
+    delete process.env.HUNK_RUNTIME_DIR;
     process.env.XDG_RUNTIME_DIR = runtime.path;
     process.env.HUNK_MCP_HOST = "127.0.0.1";
     process.env.HUNK_MCP_PORT = String(port);
@@ -272,6 +274,7 @@ describe("review page inside the daemon", () => {
       ["HUNK_MCP_PORT", originalPort],
       ["HUNK_MCP_HOST", originalHost],
       ["XDG_RUNTIME_DIR", originalRuntimeDir],
+      ["HUNK_RUNTIME_DIR", originalHunkRuntimeDir],
     ] as const) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;

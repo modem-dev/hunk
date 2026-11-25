@@ -131,6 +131,7 @@ export async function startTestWebReview(
   const env = {
     ...process.env,
     HUNK_MCP_PORT: String(port),
+    HUNK_RUNTIME_DIR: undefined,
     XDG_RUNTIME_DIR: directories[0],
     XDG_CONFIG_HOME: directories[1],
   };

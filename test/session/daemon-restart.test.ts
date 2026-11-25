@@ -106,6 +106,7 @@ function processEnv({ port, runtimeDir }: Environment, revision?: number) {
   const env: Record<string, string | undefined> = {
     ...process.env,
     XDG_CONFIG_HOME: testConfigHome,
+    HUNK_RUNTIME_DIR: runtimeDir,
     XDG_RUNTIME_DIR: runtimeDir,
     HUNK_MCP_PORT: String(port),
     HUNK_DISABLE_UPDATE_NOTICE: "1",

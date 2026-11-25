@@ -120,6 +120,7 @@ async function startDaemonAtRevision(port: number, configHome: string, revision:
     env: {
       ...process.env,
       XDG_CONFIG_HOME: configHome,
+      HUNK_RUNTIME_DIR: configHome,
       XDG_RUNTIME_DIR: configHome,
       HUNK_MCP_PORT: String(port),
       HUNK_INTERNAL_SESSION_DAEMON_VERSION: String(revision),
@@ -140,6 +141,7 @@ function runCli(args: string[], port: number, configHome: string) {
     env: {
       ...process.env,
       XDG_CONFIG_HOME: configHome,
+      HUNK_RUNTIME_DIR: configHome,
       XDG_RUNTIME_DIR: configHome,
       HUNK_MCP_PORT: String(port),
     },
@@ -156,6 +158,7 @@ async function restartDaemonInProcess(port: number, configHome: string) {
   const previous = { ...process.env };
   Object.assign(process.env, {
     XDG_CONFIG_HOME: configHome,
+    HUNK_RUNTIME_DIR: configHome,
     XDG_RUNTIME_DIR: configHome,
     HUNK_MCP_PORT: String(port),
   });
@@ -197,6 +200,7 @@ function launchWindow(
     rows: 24,
     env: {
       XDG_CONFIG_HOME: configHome,
+      HUNK_RUNTIME_DIR: configHome,
       XDG_RUNTIME_DIR: configHome,
       // The harness disables session brokering by default; this test is about it.
       HUNK_MCP_DISABLE: "0",

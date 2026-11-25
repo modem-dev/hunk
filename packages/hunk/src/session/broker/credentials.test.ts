@@ -14,10 +14,11 @@ import { loadOrCreateHunkSessionBrokerCredentials } from "./credentials";
 
 const roots: string[] = [];
 
-function isolatedEnv() {
+/** Build an environment that cannot inherit the developer's runtime override. */
+function isolatedEnv(): NodeJS.ProcessEnv {
   const root = mkdtempSync(join(tmpdir(), "hunk-credentials-test-"));
   roots.push(root);
-  return { ...process.env, XDG_RUNTIME_DIR: root };
+  return { ...process.env, HUNK_RUNTIME_DIR: undefined, XDG_RUNTIME_DIR: root };
 }
 
 afterEach(() => {
@@ -54,9 +55,7 @@ describe("Hunk session broker credential store", () => {
 
     await loadOrCreateHunkSessionBrokerCredentials({ env });
 
-    expect(lstatSync(join(override, "hunk-mcp", "security-v1", "caller.json")).isFile()).toBe(
-      true,
-    );
+    expect(lstatSync(join(override, "hunk-mcp", "security-v1", "caller.json")).isFile()).toBe(true);
     expect(() => lstatSync(join(env.XDG_RUNTIME_DIR!, "hunk-mcp"))).toThrow();
   });
 

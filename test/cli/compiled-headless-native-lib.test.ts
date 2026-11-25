@@ -118,6 +118,7 @@ function createTestEnvironment(port?: number) {
       USERPROFILE: home,
       XDG_CACHE_HOME: cache,
       XDG_CONFIG_HOME: config,
+      HUNK_RUNTIME_DIR: undefined,
       XDG_RUNTIME_DIR: runtime,
       TMPDIR: temp,
       BUN_TMPDIR: temp,

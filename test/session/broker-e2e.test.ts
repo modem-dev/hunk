@@ -11,9 +11,11 @@ const sourceEntrypoint = join(repoRoot, "packages/hunk/src/main.tsx");
 // Spawned hunk processes must assert built-in defaults, not the developer's ambient user config.
 const testConfigHome = createTestConfigHome();
 // Spawned daemons record launch metadata and credentials here, never in the real runtime dir.
-const { path: testRuntimeDir, cleanup: cleanupTestRuntimeDir } = createTestRuntimeDir(
-  "hunk-session-e2e-runtime-",
-);
+const {
+  path: testRuntimeDir,
+  env: testRuntimeEnv,
+  cleanup: cleanupTestRuntimeDir,
+} = createTestRuntimeDir("hunk-session-e2e-runtime-");
 
 afterAll(cleanupTestConfigHomes);
 afterAll(cleanupTestRuntimeDir);
@@ -130,7 +132,7 @@ function spawnHunkSession(fixture: FixtureFiles, port: number) {
     env: {
       ...process.env,
       XDG_CONFIG_HOME: testConfigHome,
-      XDG_RUNTIME_DIR: testRuntimeDir,
+      ...testRuntimeEnv,
       TERM: "xterm-256color",
       COLUMNS: "120",
       LINES: "24",
@@ -198,7 +200,7 @@ function runSessionCli(args: string[], port: number) {
     env: {
       ...process.env,
       XDG_CONFIG_HOME: testConfigHome,
-      XDG_RUNTIME_DIR: testRuntimeDir,
+      ...testRuntimeEnv,
       HUNK_MCP_PORT: `${port}`,
     },
   });

@@ -8,7 +8,7 @@ const repoRoot = process.cwd();
 // Spawned hunk processes must assert built-in defaults, not the developer's ambient user config.
 const testConfigHome = createTestConfigHome();
 // Spawned daemons mint credentials here, never in the developer's real runtime dir.
-const { path: testRuntimeDir, cleanup: cleanupTestRuntimeDir } = createTestRuntimeDir(
+const { env: testRuntimeEnv, cleanup: cleanupTestRuntimeDir } = createTestRuntimeDir(
   "hunk-session-daemon-runtime-",
 );
 
@@ -91,7 +91,7 @@ describe("session daemon lifecycle", () => {
       env: {
         ...process.env,
         XDG_CONFIG_HOME: testConfigHome,
-        XDG_RUNTIME_DIR: testRuntimeDir,
+        ...testRuntimeEnv,
         HUNK_MCP_PORT: String(port),
       },
     });

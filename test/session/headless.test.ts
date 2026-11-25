@@ -17,8 +17,11 @@ const repoRoot = process.cwd();
 const sourceEntrypoint = join(repoRoot, "packages/hunk/src/main.tsx");
 // Spawned hunk processes must assert built-in defaults, not the developer's ambient user config.
 const testConfigHome = createTestConfigHome();
-const { path: testRuntimeDir, cleanup: cleanupTestRuntimeDir } =
-  createTestRuntimeDir("hunk-headless-runtime-");
+const {
+  path: testRuntimeDir,
+  env: testRuntimeEnv,
+  cleanup: cleanupTestRuntimeDir,
+} = createTestRuntimeDir("hunk-headless-runtime-");
 const tempDirs: string[] = [];
 const ports: number[] = [];
 // Every headless process a test starts, so a failed or timed-out test cannot leak a session.
@@ -81,7 +84,7 @@ function testEnv(port: number) {
   return {
     ...process.env,
     XDG_CONFIG_HOME: testConfigHome,
-    XDG_RUNTIME_DIR: testRuntimeDir,
+    ...testRuntimeEnv,
     HUNK_MCP_PORT: String(port),
     HUNK_DISABLE_UPDATE_NOTICE: "1",
   };

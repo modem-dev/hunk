@@ -31,6 +31,7 @@ import { HUNK_SESSION_BROKER_APP_ID, HUNK_SESSION_BROKER_APP_REVISION } from "./
 const originalHost = process.env.HUNK_MCP_HOST;
 const originalPort = process.env.HUNK_MCP_PORT;
 const originalUnsafeRemote = process.env.HUNK_MCP_UNSAFE_ALLOW_REMOTE;
+const originalHunkRuntimeDir = process.env.HUNK_RUNTIME_DIR;
 const originalRuntimeDir = process.env.XDG_RUNTIME_DIR;
 // Served daemons and minted credentials write here instead of the developer's runtime dir.
 const { path: testRuntimeDir, cleanup: cleanupTestRuntimeDir } = createTestRuntimeDir(
@@ -306,6 +307,7 @@ async function waitForSocketClose(socket: WebSocket) {
 }
 
 beforeAll(() => {
+  delete process.env.HUNK_RUNTIME_DIR;
   process.env.XDG_RUNTIME_DIR = testRuntimeDir;
 });
 
@@ -329,12 +331,18 @@ afterEach(() => {
   }
 
   // Undo per-test runtime overrides without exposing the real runtime dir between tests.
+  delete process.env.HUNK_RUNTIME_DIR;
   process.env.XDG_RUNTIME_DIR = testRuntimeDir;
 });
 
 afterAll(async () => {
   // Restore the ambient runtime dir only after the file, so a stray timer between tests still
   // resolves the private one.
+  if (originalHunkRuntimeDir === undefined) {
+    delete process.env.HUNK_RUNTIME_DIR;
+  } else {
+    process.env.HUNK_RUNTIME_DIR = originalHunkRuntimeDir;
+  }
   if (originalRuntimeDir === undefined) {
     delete process.env.XDG_RUNTIME_DIR;
   } else {

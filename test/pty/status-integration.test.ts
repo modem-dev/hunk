@@ -389,6 +389,7 @@ test("enabled trusted launch extensions span real broker-mounted sibling reviews
     ...process.env,
     XDG_CONFIG_HOME: configHome,
     XDG_STATE_HOME: configHome,
+    HUNK_RUNTIME_DIR: undefined,
     XDG_RUNTIME_DIR: configHome,
   };
   writeExtensionTrust(cwd, "trusted", { env });
@@ -402,6 +403,7 @@ test("enabled trusted launch extensions span real broker-mounted sibling reviews
     rows: 24,
     env: {
       XDG_CONFIG_HOME: configHome,
+      HUNK_RUNTIME_DIR: undefined,
       XDG_RUNTIME_DIR: configHome,
       XDG_STATE_HOME: configHome,
       HUNK_MCP_DISABLE: "0",
