@@ -8,6 +8,7 @@
  * comes from `PreviewContext`, which the page provides.
  */
 import { useContext, useSyncExternalStore, type ReactNode } from "react";
+import { revealReviewHiddenText } from "../../core/review/hiddenText";
 import type { ReviewFile } from "../../core/review/types";
 import { Icon, type IconName } from "../icons/Icon";
 import { isPreviewImagePath } from "./imageSniff";
@@ -75,7 +76,7 @@ export function FilePreviewHeaderAction({
     <div
       className="segmented icon-segmented markdown-mode"
       role="radiogroup"
-      aria-label={`View ${path}`}
+      aria-label={`View ${revealReviewHiddenText(path)}`}
       data-testid="markdown-mode"
     >
       {modes.map((mode) => (

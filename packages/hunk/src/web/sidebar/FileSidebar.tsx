@@ -19,6 +19,10 @@
  * tree rows show the same marks as decorations (see `TreeSidebar`). A viewed file's name
  * dims in both modes, and folders show how much of them is viewed (`viewedRollup.ts`). The
  * header checkbox, `V`, and the palette toggle the mark in either mode.
+ *
+ * Names and directory headings are repository text, drawn through `RevealedText` so a bidi
+ * override cannot fake an extension and a zero-width character shows; the tree's paths get the
+ * same treatment as plain text (`treePathsOf`).
  */
 import { lazy, Suspense, useContext, useMemo } from "react";
 import { SessionEndedContext } from "../session/sessionEnded";
@@ -27,7 +31,9 @@ import {
   reviewFileChangeGlyph,
   reviewSidebarBadges,
 } from "../../core/review/fileLabels";
+import { revealReviewHiddenText } from "../../core/review/hiddenText";
 import { formatCount } from "../format/lineCounts";
+import { RevealedText } from "../format/RevealedText";
 import { Icon } from "../icons/Icon";
 import { sidebarEntry, type FileSidebarProps } from "./sidebarEntry";
 import {
@@ -79,7 +85,9 @@ function FlatSidebar({
           const shown = showsViewedRollup(rollup) ? formatViewedRollup(rollup) : undefined;
           return (
             <li key={row.id} className="flat-group">
-              <span className="flat-group-label">{row.label}</span>
+              <span className="flat-group-label">
+                <RevealedText text={row.label} />
+              </span>
               {shown ? (
                 <span
                   className="viewed-rollup"
@@ -104,12 +112,14 @@ function FlatSidebar({
               aria-current={selected ? "true" : undefined}
               data-selected={selected ? "" : undefined}
               onClick={() => onSelectFile(row.id)}
-              title={row.name}
+              title={revealReviewHiddenText(row.name)}
             >
               <span className="file-glyph" data-role={glyph.role}>
                 {glyph.glyph}
               </span>
-              <span className="flat-name">{row.name}</span>
+              <span className="flat-name">
+                <RevealedText text={row.name} />
+              </span>
               <span className="flat-badges">
                 {reviewSidebarBadges(row).map((badge) =>
                   badge.kind === "agent-comment" ? (
@@ -134,7 +144,7 @@ function FlatSidebar({
                 checked={viewed === "viewed"}
                 disabled={sessionEnded}
                 onChange={() => onToggleViewed(row.id)}
-                aria-label={`Viewed ${row.name}`}
+                aria-label={`Viewed ${revealReviewHiddenText(row.name)}`}
                 title={viewed === "changed" ? "Changed since viewed" : "Viewed"}
               />
             ) : null}

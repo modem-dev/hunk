@@ -8,7 +8,8 @@
  * chip, age when the note has a timestamp, the lines in words, a stale mark when the note's
  * context moved — then the body: STML markup rendered by `stmlDom.ts` when it yields anything,
  * otherwise the summary with the rationale beneath it in the muted color. Text is always set
- * as text.
+ * as text, and once a message is built its bidi controls and invisible characters become
+ * visible markers (`../format/RevealedText.tsx`): an agent's words are repository-grade input.
  *
  * A message the reader may act on carries icon buttons — Reply, Edit, Delete — named by
  * `data-note-action`, and a thread that takes replies ends in a quiet "Reply…" row. The file
@@ -18,6 +19,8 @@
  * The active note is marked with `data-active` on its message and its thread. `markActiveNote`
  * moves that mark in place, so changing the active note never rebuilds a card or its height.
  */
+import { revealReviewHiddenText } from "../../core/review/hiddenText";
+import { revealHiddenCharactersIn } from "../format/RevealedText";
 import { createIconElement } from "../icons/Icon";
 import type { IconName } from "../icons/iconPaths";
 import type { WebNoteCard, WebNoteGroup } from "./noteProjection";
@@ -135,7 +138,9 @@ export function renderNoteCard(card: WebNoteCard, hints: WebNoteActionHints = {}
   if (card.stale) article.dataset.stale = "";
   article.setAttribute(
     "aria-label",
-    [card.author.name, card.author.role, card.age, card.location].filter(Boolean).join(", "),
+    revealReviewHiddenText(
+      [card.author.name, card.author.role, card.age, card.location].filter(Boolean).join(", "),
+    ),
   );
 
   const avatar = document.createElement("span");
@@ -149,6 +154,8 @@ export function renderNoteCard(card: WebNoteCard, hints: WebNoteActionHints = {}
   main.append(renderHeader(card, hints), renderBody(card));
 
   article.append(avatar, main);
+  // Cards hold no composer (those are React roots beside them), so marking in place is safe.
+  revealHiddenCharactersIn(article);
   return article;
 }
 

@@ -18,6 +18,7 @@ import {
   formatFileCount,
   formatRemovedCount,
 } from "../format/lineCounts";
+import { RevealedText } from "../format/RevealedText";
 import { SIZE_BADGE_TITLE, SIZE_LABELS } from "./sizeBadge";
 import { selectSummarySentence, type SummarySentence } from "./summarySentence";
 
@@ -71,7 +72,9 @@ function Sentence({ sentence }: { sentence: SummarySentence }) {
     return (
       <>
         {"Mostly in "}
-        <code>{`${sentence.directory}/`}</code>
+        <code>
+          <RevealedText text={`${sentence.directory}/`} />
+        </code>
         {`: ${formatCount(sentence.files)} of ${formatCount(sentence.total)} files.`}
       </>
     );
@@ -79,7 +82,10 @@ function Sentence({ sentence }: { sentence: SummarySentence }) {
   return (
     <>
       {"Mostly "}
-      <code>{sentence.path}</code> (<Churn {...sentence} />
+      <code>
+        <RevealedText text={sentence.path} />
+      </code>{" "}
+      (<Churn {...sentence} />
       ).
       {sentence.rest ? (
         <>

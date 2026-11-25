@@ -17,6 +17,11 @@
  * when a file changed since it was marked. A viewed file is collapsed by default and any file
  * can be folded; the page decides which files are viewed and collapsed
  * (`../viewed/useViewedFiles.ts`).
+ *
+ * The path is repository text, so it is drawn through `RevealedText` and named in tooltips and
+ * accessible names with its hidden characters spelled out; the copy-path button still copies
+ * the exact path. A warning chip says when the file's name or loaded lines hold bidi controls
+ * or invisible characters (`core/review/hiddenText.ts`).
  */
 import {
   memo,
@@ -36,7 +41,9 @@ import type { NoteComposer } from "../notes/composerStore";
 import { planReviewFileNotes } from "../notes/noteProjection";
 import type { ReviewNoteInteraction } from "../notes/noteInteraction";
 import { reviewFileChangeGlyph } from "../../core/review/fileLabels";
-import { webFileHeaderPath, webFileStateChip } from "../format/fileHeader";
+import { revealReviewHiddenText, reviewFileHiddenText } from "../../core/review/hiddenText";
+import { webFileHeaderPath, webFileStateChip, webHiddenTextChip } from "../format/fileHeader";
+import { RevealedText } from "../format/RevealedText";
 import { formatAddedBadge, formatRemovedBadge } from "../format/lineCounts";
 import { Icon } from "../icons/Icon";
 import type { ReviewFileIndexEntry } from "../mirror/fileIndex";
@@ -155,7 +162,7 @@ function CopyPathButton({ path }: { path: string }) {
       type="button"
       className="file-header-button file-copy-path"
       data-state={copied}
-      title={`Copy ${path}`}
+      title={`Copy ${revealReviewHiddenText(path)}`}
       onClick={async () => {
         let ok = true;
         try {
@@ -201,6 +208,16 @@ function FileHeader({
 }) {
   const sessionEnded = useContext(SessionEndedContext);
   const sizes = useBinaryFileSizes(fileKey, index?.flags.binary ?? false);
+  // The loaded file's lines are scanned once per content; before it loads, only the paths.
+  const hiddenText = useMemo(
+    () =>
+      plan
+        ? reviewFileHiddenText(plan.file)
+        : index
+          ? reviewFileHiddenText({ ...index, additionLines: [], deletionLines: [] })
+          : undefined,
+    [plan, index],
+  );
   if (!index) {
     return (
       <header className="file-header" data-loading="">
@@ -223,6 +240,8 @@ function FileHeader({
     ...(emptyReason ? { emptyReason } : {}),
     ...(sizes ? { sizes } : {}),
   });
+  const hiddenTextChip = webHiddenTextChip(hiddenText);
+  const shownPath = revealReviewHiddenText(index.path);
   const added = formatAddedBadge(index.stats.additions, index.stats.truncated);
   const removed = formatRemovedBadge(index.stats.deletions);
   // A file with rows to draw can fold; a header-only row has nothing under it to hide.
@@ -236,7 +255,7 @@ function FileHeader({
           className="file-header-button file-collapse"
           aria-expanded={!collapsed}
           aria-label={collapsed ? "Expand file" : "Collapse file"}
-          title={collapsed ? `Show the changes in ${index.path}` : `Collapse ${index.path}`}
+          title={collapsed ? `Show the changes in ${shownPath}` : `Collapse ${shownPath}`}
           onClick={() => (collapsed ? viewed.expand(fileKey) : viewed.collapse(fileKey))}
         >
           <Icon name={collapsed ? "chevron-right" : "chevron-down"} />
@@ -247,11 +266,13 @@ function FileHeader({
       <span className="file-glyph" data-role={glyph.role} aria-label={glyph.role}>
         {glyph.glyph}
       </span>
-      <span className="file-name" title={path.text}>
+      <span className="file-name" title={revealReviewHiddenText(path.text)}>
         <span className="file-path">
           {path.previous !== undefined ? (
             <>
-              <span className="file-path-previous">{path.previous}</span>
+              <span className="file-path-previous">
+                <RevealedText text={path.previous} />
+              </span>
               <span className="file-path-arrow">
                 <Icon name="arrow-right" size={12} />
                 {/* The arrow's text, so a copied or read path still says `old -> new`. */}
@@ -259,13 +280,27 @@ function FileHeader({
               </span>
             </>
           ) : null}
-          <span className="file-path-dir">{path.directory}</span>
-          <span className="file-path-base">{path.basename}</span>
+          <span className="file-path-dir">
+            <RevealedText text={path.directory} />
+          </span>
+          <span className="file-path-base">
+            <RevealedText text={path.basename} />
+          </span>
         </span>
       </span>
       {chip ? (
         <span className="file-chip" {...(emptyReason ? { "data-empty-reason": emptyReason } : {})}>
           {chip}
+        </span>
+      ) : null}
+      {hiddenTextChip ? (
+        <span
+          className="file-chip file-hidden-text"
+          data-testid="hidden-text-chip"
+          title={hiddenTextChip.description}
+        >
+          {hiddenTextChip.label}
+          <span className="visually-hidden">: {hiddenTextChip.description}</span>
         </span>
       ) : null}
       <CopyPathButton path={index.path} />
@@ -299,7 +334,7 @@ function FileHeader({
             checked={viewedStatus === "viewed"}
             disabled={sessionEnded}
             onChange={() => viewed.toggle(fileKey)}
-            aria-label={`Viewed ${path.text}`}
+            aria-label={`Viewed ${revealReviewHiddenText(path.text)}`}
           />
           <span aria-hidden="true">Viewed</span>
           {viewedKeyHint ? (
@@ -377,7 +412,7 @@ export const FileSection = memo(function FileSection(props: FileSectionProps) {
       data-file-key={fileKey}
       data-selected={props.selected ? "" : undefined}
       data-collapsed={props.collapsed && props.viewed ? "" : undefined}
-      aria-label={index?.path ?? "Loading file"}
+      aria-label={index ? revealReviewHiddenText(index.path) : "Loading file"}
     >
       <FileHeader
         index={index}

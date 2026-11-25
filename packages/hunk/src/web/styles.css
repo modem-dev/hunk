@@ -851,6 +851,55 @@ body {
   border-radius: 4px;
 }
 
+/* A file whose name or lines hold bidi controls or invisible characters. */
+.file-hidden-text {
+  color: var(--hunk-text);
+  border-color: var(--hunk-file-modified);
+  background: color-mix(in srgb, var(--hunk-file-modified) 16%, transparent);
+}
+
+/*
+ * Repository text (`format/RevealedText.tsx`): isolated, so legitimate right-to-left names keep
+ * their own order without reordering the chrome around them, with each hidden character drawn
+ * as an atomic marker that shows its code point. Pierre's shadow root gets the same marker rules
+ * from `HIDDEN_CHARACTER_SHADOW_CSS`; keep the two in step.
+ */
+.revealed-text,
+.note-meta > span {
+  unicode-bidi: isolate;
+}
+
+.hidden-char {
+  display: inline-block;
+  unicode-bidi: isolate;
+  direction: ltr;
+  white-space: nowrap;
+}
+
+.hidden-char::before {
+  content: attr(data-label);
+  display: inline-block;
+  margin: 0 1px;
+  padding: 0 3px;
+  border-radius: 3px;
+  font-family: var(--code-font);
+  font-size: 0.8em;
+  font-style: normal;
+  font-weight: normal;
+  line-height: 1.3;
+  color: var(--hunk-text);
+  background: color-mix(in srgb, var(--hunk-file-modified) 22%, transparent);
+  box-shadow: inset 0 0 0 1px var(--hunk-file-modified);
+}
+
+.hidden-char > .hidden-char-source {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  font-size: 0;
+}
+
 .file-header-spacer {
   flex: 1;
   min-width: 0;

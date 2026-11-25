@@ -7,6 +7,7 @@
  * and announced politely (`aria-live`). Messages come from the shared error catalog; this module
  * only holds and times them.
  */
+import { RevealedText } from "../format/RevealedText";
 import { Icon } from "../icons/Icon";
 import { useSyncExternalStore } from "react";
 
@@ -62,7 +63,9 @@ export function ToastRegion({ toasts }: { toasts: WebToasts }) {
     <div className="toast-region" aria-live="polite" role="status" data-testid="toasts">
       {shown.map((toast) => (
         <div key={toast.id} className="toast" data-tone={toast.tone}>
-          <span>{toast.message}</span>
+          <span>
+            <RevealedText text={toast.message} />
+          </span>
           <button
             type="button"
             className="toast-dismiss"
