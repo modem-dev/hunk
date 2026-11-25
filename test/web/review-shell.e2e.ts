@@ -10,9 +10,13 @@
  * saw, a double press inverts instead of repeating, and a held key sends once. Sidebar and
  * address: clicking the selected file in the tree jumps to it, a directory row leaves the file
  * highlighted, repeated jumps add one history entry, a pasted link's access key leaves the
- * address, and closing a dialog with its own chord restores focus. A refused filter edit
- * resets the field.
+ * address, and closing a dialog with its own chord restores focus. Filter: a refused edit
+ * resets the field, and a filter matching nothing says so in the terminal's words and clears
+ * from the empty stream, while an empty review says there are no changes.
  */
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { parseReviewCapabilityFragment } from "../../packages/hunk/src/session/reviewHttpProtocol";
 import {
@@ -506,4 +510,46 @@ test("a refused filter edit resets the field to the shared filter", async ({ pag
   const filter = page.getByTestId("filter-input");
   await filter.fill("zzz-never-accepted");
   await expect(filter).toHaveValue("");
+});
+
+// Intent: an empty stream says why, in the terminal's words — a filter that matches nothing is
+// not an empty review — and offers the way back; clearing the filter restores every file.
+test("a filter matching nothing says so and clears back to the review", async ({ page }) => {
+  await openTestReview(page, "test/web/fixtures/two-files.patch");
+  const filter = page.getByTestId("filter-input");
+  const empty = page.locator(".stream-empty");
+  await filter.fill("no-such-file");
+  await expect(page.locator("section[data-file-key]")).toHaveCount(0);
+  await expect(empty).toContainText("No files match the current filter.");
+  await expect(empty).not.toContainText("No changes to review.");
+  await expect(page.locator(".sidebar-count")).toHaveText("0");
+
+  await empty.getByRole("button", { name: "Clear filter" }).click();
+  await expect(filter).toHaveValue("");
+  await expect(page.locator("section[data-file-key]")).toHaveCount(2);
+  await expect(empty).toHaveCount(0);
+  await expect
+    .poll(async () => (await review!.readApi("state")).state)
+    .toMatchObject({
+      filter: "",
+    });
+});
+
+// Intent: a review with no files says so in the terminal's words and never blames the filter.
+test("an empty review says there are no changes", async ({ page }) => {
+  const directory = mkdtempSync(join(tmpdir(), "hunk-web-empty-"));
+  try {
+    const patch = join(directory, "empty.patch");
+    writeFileSync(patch, "");
+    review = await startTestWebReview(patch);
+    problems = await watchTestPageProblems(page);
+    await page.goto(review.url);
+    await expect(page.locator('.toolbar [data-state="connected"]')).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.locator(".stream-empty")).toHaveText("No changes to review.");
+    await expect(page.locator(".stream-empty").getByRole("button")).toHaveCount(0);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

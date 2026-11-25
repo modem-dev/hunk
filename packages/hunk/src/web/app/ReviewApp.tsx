@@ -38,10 +38,12 @@ import {
   type CSSProperties,
   type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 import { selectActiveRevealNoteId } from "../../core/review/selectors";
 import { activateFirstNoteOfSelection } from "../notes/noteActivation";
 import { reviewFileMatchesFilter } from "../../core/review/selectors";
+import { REVIEW_FILTER_NO_MATCH_MESSAGE } from "../../core/review/emptyState";
 import { lowerAppCommandToReviewIntent } from "../../core/run/commandCatalog";
 import { formatKeyChord } from "../../core/run/keyChordLabels";
 import { reviewErrorMessage } from "../../session/reviewErrorCatalog";
@@ -1022,6 +1024,35 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
           ? ({ label: "Updating…", state: "loading" } as const)
           : ({ label: "Connected", state: "connected" } as const);
 
+  // An empty stream says why, in the terminal's order and words: a review with no files gets the
+  // stream's default message, a filter matching nothing says so, and "Hide viewed" hiding
+  // everything the filter left is this page's own case. The last two offer their way back.
+  let streamEmptyMessage: ReactNode | undefined;
+  if (mirror.slots.length > 0 && visibleSlots.length === 0) {
+    streamEmptyMessage = (
+      <>
+        {`${REVIEW_FILTER_NO_MATCH_MESSAGE} `}
+        <button
+          type="button"
+          className="header-action"
+          disabled={sessionEnded}
+          onClick={() => interactive.changeFilter("")}
+        >
+          Clear filter
+        </button>
+      </>
+    );
+  } else if (visibleSlots.length > 0 && streamSlots.length === 0) {
+    streamEmptyMessage = (
+      <>
+        {"Every file here is viewed and hidden. "}
+        <button type="button" className="header-action" onClick={viewed.toggleHideViewed}>
+          Show viewed files
+        </button>
+      </>
+    );
+  }
+
   return (
     <div
       className="review-app"
@@ -1212,22 +1243,7 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
                   {...(pageHint("hunk.web.toggleViewed")
                     ? { viewedKeyHint: pageHint("hunk.web.toggleViewed") }
                     : {})}
-                  {...(streamSlots.length === 0 && visibleSlots.length > 0
-                    ? {
-                        emptyMessage: (
-                          <>
-                            {"Every file here is viewed and hidden. "}
-                            <button
-                              type="button"
-                              className="header-action"
-                              onClick={viewed.toggleHideViewed}
-                            >
-                              Show viewed files
-                            </button>
-                          </>
-                        ),
-                      }
-                    : {})}
+                  {...(streamEmptyMessage ? { emptyMessage: streamEmptyMessage } : {})}
                 />
                 {showMinimap ? (
                   <Minimap
