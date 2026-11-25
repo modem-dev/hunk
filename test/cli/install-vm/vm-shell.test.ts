@@ -173,7 +173,9 @@ describe("disposable VM shell", () => {
       expect(contents.length).toBeGreaterThan(0);
       if (relativePath.endsWith(".patch")) {
         expect(
-          parsePatchFiles(contents, relativePath, true).flatMap((entry) => entry.files).length,
+          parsePatchFiles(contents, { cacheKeyPrefix: relativePath, throwOnError: true }).flatMap(
+            (entry) => entry.files,
+          ).length,
         ).toBeGreaterThan(0);
       }
       if (relativePath.endsWith(".json")) expect(() => JSON.parse(contents)).not.toThrow();

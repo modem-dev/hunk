@@ -30,7 +30,10 @@ const NEW_SOURCE = OLD_SOURCE.replace("Line three.", "Line three, edited.");
 
 /** Parse one test patch into its single partial file metadata object. */
 function parsePartialMetadata(patch = PARTIAL_PATCH) {
-  const metadata = parsePatchFiles(patch, "source-backed-test", true)[0]?.files[0];
+  const metadata = parsePatchFiles(patch, {
+    cacheKeyPrefix: "source-backed-test",
+    throwOnError: true,
+  })[0]?.files[0];
   if (!metadata) {
     throw new Error("Expected one partial patch file");
   }

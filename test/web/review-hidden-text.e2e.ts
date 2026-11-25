@@ -192,6 +192,8 @@ test("reveals hidden characters in agent notes and the Notes tab", async ({ page
   await openTestHiddenTextReview(page, { layout: "unified", sidebarMode: "flat" });
 
   const card = page.locator(".note-card").first();
+  // Pierre 1.7 can mount annotation slots after the load progress clears.
+  await expect(card).toBeVisible();
   expect(await markerLabels(card.locator(".note-author"))).toEqual(["U+200B"]);
   const summary = card.locator(".note-summary");
   expect(await markerLabels(summary)).toEqual(["U+202E"]);

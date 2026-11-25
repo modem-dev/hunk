@@ -78,7 +78,10 @@ const ELIXIR_PATCH = `diff --git a/repro.ex b/repro.ex
 
 /** Build a partial source-backed diff whose two sides require independent lexical state. */
 function createSourceBackedDiff(): DiffFile {
-  const metadata = parsePatchFiles(ELIXIR_PATCH, "compact-source", true)[0]?.files[0];
+  const metadata = parsePatchFiles(ELIXIR_PATCH, {
+    cacheKeyPrefix: "compact-source",
+    throwOnError: true,
+  })[0]?.files[0];
   if (!metadata) {
     throw new Error("Expected partial Elixir metadata");
   }

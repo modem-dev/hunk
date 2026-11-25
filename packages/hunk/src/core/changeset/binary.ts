@@ -28,6 +28,8 @@ export function createSkippedBinaryMetadata(
     isPartial: true,
     additionLines: [],
     deletionLines: [],
+    additionCharacterCount: 0,
+    deletionCharacterCount: 0,
     cacheKey: `${name}:binary-skipped`,
   };
 }

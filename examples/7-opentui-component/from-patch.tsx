@@ -4,7 +4,10 @@ import { parsePatchFiles } from "../../packages/hunk/src/opentui";
 import { readExampleFile, runExample } from "./support";
 
 const patch = readExampleFile("change.patch");
-const parsedPatches = parsePatchFiles(patch, "example:patch", true);
+const parsedPatches = parsePatchFiles(patch, {
+  cacheKeyPrefix: "example:patch",
+  throwOnError: true,
+});
 const metadata = parsedPatches.flatMap((entry) => entry.files)[0];
 
 if (!metadata) {

@@ -13,7 +13,9 @@ import {
   renderFileWithHighlighter,
 } from "@pierre/diffs";
 import { pierreHighlightRenderOptions } from "../../../core/documents/highlightRenderOptions";
+import { PIERRE_SYNTAX_HIGHLIGHTER } from "../syntaxHighlightTheme";
 import { aliasContextHighlightLines } from "./highlightContext";
+import { markWordDiffHighlightLines } from "./highlightWordDiff";
 import {
   cloneCompactHighlightedDiff,
   cloneCompactHighlightedDocument,
@@ -179,9 +181,19 @@ function isPlainLanguage(language: string) {
   return language === "text" || language === "ansi";
 }
 
+/**
+ * Return whether a language needs a Shiki grammar resolved before rendering.
+ *
+ * Highlights ships its lexers in WASM and renders unknown languages as text, so resolving a
+ * TextMate grammar would only load unused JSON.
+ */
+function needsGrammarResolution(language: string) {
+  return !isPlainLanguage(language) && PIERRE_SYNTAX_HIGHLIGHTER !== "highlights";
+}
+
 /** Resolve one grammar, classifying failure as permanent for that language. */
 async function resolveWorkerLanguage(language: string) {
-  if (isPlainLanguage(language)) return;
+  if (!needsGrammarResolution(language)) return;
   try {
     await getResolvedOrResolveLanguage(language as never);
   } catch (error) {
@@ -195,7 +207,7 @@ async function resolveWorkerLanguage(language: string) {
 /** Resolve one theme, classifying failure as permanent for that theme. */
 async function resolveWorkerTheme(theme: string) {
   try {
-    await getResolvedOrResolveTheme(theme as never);
+    await getResolvedOrResolveTheme(theme as never, PIERRE_SYNTAX_HIGHLIGHTER);
   } catch (error) {
     throw new HighlightWorkerRuntimeFailure(
       "unsupported-theme",
@@ -208,7 +220,7 @@ async function resolveWorkerTheme(theme: string) {
 function workerHighlighter(language: string, theme: string) {
   return getSharedHighlighter({
     ...getHighlighterOptions(language, { theme: theme as never }),
-    preferredHighlighter: "shiki-wasm",
+    preferredHighlighter: PIERRE_SYNTAX_HIGHLIGHTER,
   });
 }
 
@@ -242,10 +254,11 @@ async function renderRequest(request: HighlightWorkerRenderRequest, cacheKey: st
       highlighter,
       pierreHighlightRenderOptions(request.theme),
     );
-    const highlighted = result.code as {
-      deletionLines: HighlightedHastLines;
-      additionLines: HighlightedHastLines;
-    };
+    const highlighted = markWordDiffHighlightLines(
+      request.metadata,
+      result.code as { deletionLines: HighlightedHastLines; additionLines: HighlightedHastLines },
+      request.theme,
+    );
     const payload = encodeCompactHighlightedDiff(
       request.aliasContext
         ? aliasContextHighlightLines(request.metadata, highlighted)

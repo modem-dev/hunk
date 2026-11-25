@@ -143,7 +143,10 @@ export function changesetFromPatch(
 
   let parsedPatches: ReturnType<typeof parsePatchFiles>;
   try {
-    parsedPatches = parsePatchFiles(sanitizedPatchText, "patch", true);
+    parsedPatches = parsePatchFiles(sanitizedPatchText, {
+      cacheKeyPrefix: "patch",
+      throwOnError: true,
+    });
   } catch {
     // One unparseable file must not discard the whole review: fall back to
     // per-file parsing so every salvageable file still renders.
@@ -232,6 +235,8 @@ function buildSkippedUnparseableFile(
     isPartial: true,
     additionLines: [],
     deletionLines: [],
+    additionCharacterCount: 0,
+    deletionCharacterCount: 0,
     cacheKey: `${name}:unparseable-skipped`,
   };
   return buildDiffFile(
@@ -288,7 +293,7 @@ function changesetFromPatchChunks(
   for (const chunk of chunks) {
     let parsed: ReturnType<typeof parsePatchFiles> | undefined;
     try {
-      parsed = parsePatchFiles(chunk, "patch", true);
+      parsed = parsePatchFiles(chunk, { cacheKeyPrefix: "patch", throwOnError: true });
     } catch {
       parsed = undefined;
     }

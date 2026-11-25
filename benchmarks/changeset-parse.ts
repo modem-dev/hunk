@@ -22,7 +22,7 @@ function measureScenario({ name, patch }: Scenario) {
   const normalizeMs = performance.now() - normalizeStart;
 
   const parseStart = performance.now();
-  const parsed = parsePatchFiles(sanitized, "patch", true);
+  const parsed = parsePatchFiles(sanitized, { cacheKeyPrefix: "patch", throwOnError: true });
   const parseMs = performance.now() - parseStart;
 
   const splitStart = performance.now();

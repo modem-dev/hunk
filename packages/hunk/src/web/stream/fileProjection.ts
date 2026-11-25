@@ -69,6 +69,13 @@ export function reviewGapIdForSeparator(file: ReviewFile, separatorHunkIndex: nu
     : reviewGapId("before", separatorHunkIndex);
 }
 
+/** Sum line lengths the way Pierre's parser fills its per-side character counts. */
+function characterCount(lines: readonly string[]) {
+  let total = 0;
+  for (const line of lines) total += line.length;
+  return total;
+}
+
 /**
  * Translate one shared-model file into Pierre's parsed-diff metadata.
  *
@@ -109,6 +116,8 @@ export function toPierreFileDiff(
     isPartial: file.flags.partial,
     additionLines: file.additionLines,
     deletionLines: file.deletionLines,
+    additionCharacterCount: characterCount(file.additionLines),
+    deletionCharacterCount: characterCount(file.deletionLines),
     cacheKey,
   };
 }

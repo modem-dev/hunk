@@ -76,7 +76,7 @@ export function createHunkDiffFilesFromPatch(patchText: string, sourceId = "patc
   const sanitizedPatch = sanitizePatch(patchText);
   const chunks = splitPatchIntoFileChunks(sanitizedPatch.text);
 
-  return parsePatchFiles(sanitizedPatch.text, sourceId, true)
+  return parsePatchFiles(sanitizedPatch.text, { cacheKeyPrefix: sourceId, throwOnError: true })
     .flatMap((entry) => entry.files)
     .map((metadata, index) => {
       const decodedPaths = sanitizedPatch.filePaths[index];

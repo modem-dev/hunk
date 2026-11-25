@@ -202,9 +202,10 @@ export function createGiantSingleDiffFile(
   }
 
   const patchText = `${patchLines.join("\n")}\n`;
-  const metadata = parsePatchFiles(patchText, `stream:${index}`, true).flatMap(
-    (entry) => entry.files,
-  )[0]!;
+  const metadata = parsePatchFiles(patchText, {
+    cacheKeyPrefix: `stream:${index}`,
+    throwOnError: true,
+  }).flatMap((entry) => entry.files)[0]!;
 
   return {
     id: `stream:${index}`,

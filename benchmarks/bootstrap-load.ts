@@ -123,7 +123,10 @@ async function measureGitBootstrap(repoDir: string) {
     const gitDiffMs = performance.now() - gitDiffStart;
 
     const parseStart = performance.now();
-    const parsedPatches = parsePatchFiles(patchText, "patch", true);
+    const parsedPatches = parsePatchFiles(patchText, {
+      cacheKeyPrefix: "patch",
+      throwOnError: true,
+    });
     const parsePatchMs = performance.now() - parseStart;
 
     const splitStart = performance.now();
