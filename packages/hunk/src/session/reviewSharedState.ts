@@ -175,7 +175,17 @@ export type ReviewThemeTokens = Record<string, string>;
  * custom or extension theme exists only in the session, so it travels as its resolved tokens.
  */
 export type ReviewThemeDefaults =
-  | { kind: "builtin"; id: string; appearance: "light" | "dark" }
+  | {
+      kind: "builtin";
+      id: string;
+      appearance: "light" | "dark";
+      /**
+       * Present when the launch asked for `auto` (or named nothing usable) rather than this id.
+       * The terminal then picks GitHub light or dark from its background; a client with no
+       * terminal picks the same pair from its own color scheme, so `id` is only the fallback.
+       */
+      auto?: true;
+    }
   | {
       kind: "custom";
       id: string;
@@ -199,6 +209,8 @@ export interface ReviewViewDefaults {
   wrapLines: boolean;
   lineNumbers: boolean;
   hunkHeaders: boolean;
+  /** `--sidebar` / `--no-sidebar` / config `sidebar`; `auto` opens the sidebar only with room. */
+  sidebar: boolean | "auto";
 }
 
 /** Where a new surface starts: what the host's config chain resolved. */
@@ -475,7 +487,9 @@ function isPresentation(value: unknown): value is ReviewPresentationDefaults {
     theme !== undefined &&
     appearanceOk &&
     isIdentifier(theme.id) &&
-    ((theme.kind === "builtin" && hasExactKeys(theme, ["kind", "id", "appearance"])) ||
+    ((theme.kind === "builtin" &&
+      hasExactKeys(theme, keysWith(["kind", "id", "appearance"], { auto: theme.auto })) &&
+      (theme.auto === undefined || theme.auto === true)) ||
       (theme.kind === "custom" &&
         hasExactKeys(
           theme,
@@ -497,7 +511,8 @@ function isPresentation(value: unknown): value is ReviewPresentationDefaults {
     typeof record.sourceLabel === "string" &&
     themeOk &&
     view !== undefined &&
-    hasExactKeys(view, ["layout", "wrapLines", "lineNumbers", "hunkHeaders"]) &&
+    hasExactKeys(view, ["layout", "wrapLines", "lineNumbers", "hunkHeaders", "sidebar"]) &&
+    (view.sidebar === "auto" || typeof view.sidebar === "boolean") &&
     (view.layout === "auto" || view.layout === "split" || view.layout === "unified") &&
     typeof view.wrapLines === "boolean" &&
     typeof view.lineNumbers === "boolean" &&

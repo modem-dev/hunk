@@ -236,7 +236,8 @@ export function shouldSkipLargeTrackedDiff(file: GitNumstatFile, repoRoot: strin
   }
 
   try {
-    return fs.statSync(join(repoRoot, file.path)).size > LARGE_DIFF_FILE_MAX_BYTES;
+    // lstat: a tracked symlink's content is its short link text, not the size of its target.
+    return fs.lstatSync(join(repoRoot, file.path)).size > LARGE_DIFF_FILE_MAX_BYTES;
   } catch {
     return false;
   }

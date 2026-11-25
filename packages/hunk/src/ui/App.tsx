@@ -26,8 +26,10 @@ import type {
 import { experimentalFeatureEnabled, resolveExperimentalDiffFiles } from "../core/run/experimental";
 import { DEFAULT_FILE_GAP, DEFAULT_HUNK_GAP } from "../core/run/reviewGap";
 import { DEFAULT_TAB_WIDTH } from "../core/run/tabWidth";
+import { extractHunk } from "../core/patch/hunk";
 import { isVcsReviewInput } from "../core/vcs";
 import type { AppBootstrap } from "../core/bootstrap";
+import { REVIEW_EMPTY_MESSAGE, REVIEW_FILTER_NO_MATCH_MESSAGE } from "../core/review/emptyState";
 import {
   selectActiveEditableReviewNoteId,
   selectActiveRemovableReviewNote,
@@ -1268,6 +1270,32 @@ export function App({
     showTransientNotice("Clipboard copy unsupported in this terminal (enable OSC 52)");
   }, [renderer, showTransientNotice]);
 
+  const selectedHunkText = useMemo(
+    () => (selectedFile ? extractHunk(selectedFile.patch, selectedHunkIndex) : undefined),
+    [selectedFile, selectedHunkIndex],
+  );
+
+  /**
+   * Copy the selected hunk's raw diff text to the clipboard.
+   *
+   * Reads the selection from the store at invocation because navigation commits synchronously:
+   * `]Y` arriving in one stdin chunk must copy the hunk `]` selected, not the last render's.
+   */
+  const copySelectedHunk = useCallback(() => {
+    const { fileId, hunkIndex } = review.getSelection();
+    const file = fileId ? review.allFiles.find((entry) => entry.id === fileId) : undefined;
+    const hunkText = file && hunkIndex !== null ? extractHunk(file.patch, hunkIndex) : undefined;
+    if (!hunkText) return;
+
+    if (renderer.isOsc52Supported?.() && typeof renderer.copyToClipboardOSC52 === "function") {
+      renderer.copyToClipboardOSC52(hunkText);
+      showTransientNotice("Copied hunk to clipboard");
+      return;
+    }
+
+    showTransientNotice("Clipboard copy unsupported in this terminal (enable OSC 52)");
+  }, [renderer, review.allFiles, review.getSelection, showTransientNotice]);
+
   /** Toggle the modal keyboard help overlay. */
   const toggleHelp = useCallback(() => {
     setShowHelp((current) => !current);
@@ -1502,6 +1530,8 @@ export function App({
         hasVisualSelection: () => selectionActionsRef.current?.hasSelection() ?? false,
         startVisualSelection: () => selectionActionsRef.current?.beginKeyboardSelection(),
         copySelection: () => selectionActionsRef.current?.copy(),
+        canCopySelectedHunk: selectedHunkText !== undefined,
+        copySelectedHunk,
         clearSelection: () => selectionActionsRef.current?.clear(),
         startUserNote: () => {
           if (!selectionActionsRef.current?.comment()) startUserNote();
@@ -1854,9 +1884,7 @@ export function App({
             fileViews={fileViewLayouts}
             files={filteredFiles}
             emptyStateMessage={
-              reviewFiles.length === 0
-                ? "No changes to review."
-                : "No files match the current filter."
+              reviewFiles.length === 0 ? REVIEW_EMPTY_MESSAGE : REVIEW_FILTER_NO_MATCH_MESSAGE
             }
             visibleHunkIndexesByFileId={review.visibleHunkIndexesByFileId}
             semanticFileIdentities={semanticFileIdentities}

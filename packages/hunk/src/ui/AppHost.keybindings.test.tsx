@@ -312,7 +312,7 @@ describe("user keybindings", () => {
     const seen: string[] = [];
     extensions.registry.commands.push({
       extensionId: "coach",
-      command: { id: "toggle-lines", title: "Toggle lines", key: "Y" },
+      command: { id: "toggle-lines", title: "Toggle lines", key: "X" },
       handler: (ctx) => {
         ctx.commands.execute("hunk.view.toggleLineNumbers");
       },
@@ -327,7 +327,7 @@ describe("user keybindings", () => {
 
     await withAppHost(bootstrap, async (setup) => {
       await act(async () => {
-        await setup.mockInput.typeText("Y");
+        await setup.mockInput.typeText("X");
       });
       await flush(setup);
       expect(seen).toEqual(["hunk.view.toggleLineNumbers", "coach.toggle-lines"]);

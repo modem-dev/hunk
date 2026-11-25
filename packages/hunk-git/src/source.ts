@@ -1,4 +1,3 @@
-import { join } from "node:path";
 import type {
   ExtensionVcsFileBytesResult,
   ExtensionVcsFileSourceResult,
@@ -8,10 +7,10 @@ import {
   DEFAULT_SOURCE_BYTES_MAX_BYTES,
   DEFAULT_SOURCE_TEXT_MAX_BYTES,
   logSourceDiagnostic,
-  readFileBytesWithLimit,
-  readFileTextWithLimit,
   readStreamBytesWithLimit,
   readStreamTextWithLimit,
+  readWorktreeEntryBytesWithLimit,
+  readWorktreeEntryTextWithLimit,
   terminateSourceSubprocess,
 } from "@hunk/vcs/source";
 import type { GitDiffEndpoint } from "./commands";
@@ -24,10 +23,15 @@ class GitSourceTooLargeError extends Error {
   }
 }
 
-/** Source locations Git can resolve without consulting Hunk core internals. */
+/**
+ * Source locations Git can resolve without consulting Hunk core internals.
+ *
+ * A `worktree` side reads the checkout with blob semantics: a symlink yields its link target
+ * text, never the file it points to, matching the patch and the `git-blob`/`git-index` sides.
+ */
 export type GitFileSourceSpec =
   | { kind: "none" }
-  | { kind: "fs"; absolutePath: string }
+  | { kind: "worktree"; repoRoot: string; path: string }
   | { kind: "git-blob"; repoRoot: string; ref: string; path: string }
   | { kind: "git-index"; repoRoot: string; path: string };
 
@@ -55,7 +59,7 @@ export function gitEndpointSourceSpec(
     case "index":
       return { kind: "git-index", repoRoot, path: filePath };
     case "worktree":
-      return { kind: "fs", absolutePath: join(repoRoot, filePath) };
+      return { kind: "worktree", repoRoot, path: filePath };
   }
 }
 
@@ -157,8 +161,8 @@ export function readGitFileSource(
   switch (spec.kind) {
     case "none":
       return Promise.resolve(null);
-    case "fs":
-      return readFileTextWithLimit(spec.absolutePath, maxSourceBytes);
+    case "worktree":
+      return readWorktreeEntryTextWithLimit(spec.repoRoot, spec.path, maxSourceBytes);
     case "git-index":
       return readGitObjectSpec(spec.repoRoot, `:${spec.path}`, gitExecutable, maxSourceBytes);
     case "git-blob":
@@ -182,8 +186,8 @@ export function readGitFileBytes(
   switch (spec.kind) {
     case "none":
       return Promise.resolve(null);
-    case "fs":
-      return readFileBytesWithLimit(spec.absolutePath, maxBytes);
+    case "worktree":
+      return readWorktreeEntryBytesWithLimit(spec.repoRoot, spec.path, maxBytes);
     case "git-index":
       return readGitObjectBytes(spec.repoRoot, `:${spec.path}`, gitExecutable, maxBytes);
     case "git-blob":

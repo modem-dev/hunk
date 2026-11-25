@@ -66,7 +66,13 @@ function createTestSharedState(): ReviewSharedState {
         tokens: { background: "#000000" },
         syntaxColors: { keyword: "#ff0000" },
       },
-      view: { layout: "auto", wrapLines: false, lineNumbers: true, hunkHeaders: true },
+      view: {
+        layout: "auto",
+        wrapLines: false,
+        lineNumbers: true,
+        hunkHeaders: true,
+        sidebar: "auto",
+      },
       keymap: { "hunk.app.quit": ["q"] },
     },
   };

@@ -126,6 +126,20 @@ export function sessionCustomWebTheme(
 }
 
 /**
+ * The theme id a session's theme means in this browser. An `auto` launch has no terminal
+ * background here, so the browser's color scheme picks GitHub light or dark instead.
+ */
+export function sessionThemeId(
+  session: ReviewThemeDefaults | undefined,
+  prefersDark: boolean,
+): string | undefined {
+  if (session?.kind === "builtin" && session.auto) {
+    return prefersDark ? DEFAULT_WEB_THEME_IDS.dark : DEFAULT_WEB_THEME_IDS.light;
+  }
+  return session?.id;
+}
+
+/**
  * Pick the theme to show: this browser's choice, then the session's theme, then the
  * color-scheme default.
  */
@@ -136,13 +150,14 @@ export function resolveSessionWebTheme(
   prefersDark: boolean,
 ): WebTheme | undefined {
   const custom = session?.kind === "custom" ? sessionCustomWebTheme(session) : undefined;
+  const sessionId = sessionThemeId(session, prefersDark);
   const choose = (id: string | undefined) =>
     id === undefined
       ? undefined
       : id === custom?.id
         ? custom
         : index.themes.find((theme) => theme.id === id);
-  return choose(storedId) ?? choose(session?.id) ?? resolveWebTheme(index, undefined, prefersDark);
+  return choose(storedId) ?? choose(sessionId) ?? resolveWebTheme(index, undefined, prefersDark);
 }
 
 /** Pick the theme to show: the stored one if it still exists, else the color-scheme default. */

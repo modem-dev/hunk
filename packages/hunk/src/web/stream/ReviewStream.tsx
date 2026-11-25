@@ -16,14 +16,20 @@
  *   the viewport alone. A hunk in a file that has not mounted yet is scrolled to by estimate
  *   and corrected once the file draws. An agent's reveal (`hunk session navigate`, a comment
  *   added with `--focus`) may name an exact line or note; the hunk reveal then lands on that
- *   line or note card instead of the hunk's first row.
+ *   line or note card instead of the hunk's first row. Files drawing or landing around a
+ *   revealed target change height, so the target is held in place (and keeps the selection)
+ *   for a moment after the reveal, and for as long as a long review is still loading, until
+ *   the reader's own wheel, touch, pointer, or key input, or a scroll command.
  * - Viewport anchoring. When the reader scrolls by hand — wheel, scrollbar, keys, or the
  *   page's own scroll commands — and the scroll settles, the hunk nearest the viewport's
  *   middle becomes the selection through `selection/anchor`, which never moves a viewport
  *   (`REVIEW_VIEWPORT_ANCHOR_REVEAL`, audit B11). A target the page just revealed holds the
  *   selection for as long as it stays where the reveal put it, so mounting files nearby
  *   cannot steal it.
- * - Scroll commands, through the `controller` this component fills in.
+ * - Scroll commands, through the `controller` this component fills in. The page settles the
+ *   viewport before every command (`controller.settle`), so a key pressed before the scroll's
+ *   quiet period ends starts from the hunk that scroll brought to the middle, as the terminal
+ *   adopts it before reading its next key.
  * - Reloads. A new generation swaps the document under the reader; the stream keeps the file
  *   at the top of the viewport, and the reader's offset inside it, where they were.
  */
@@ -40,6 +46,7 @@ import {
 import type { ReviewState } from "../../core/review/state";
 import type { ReviewFile } from "../../core/review/types";
 import { reviewHunkIndexAtOffset } from "../../core/review/viewportAnchor";
+import { REVIEW_EMPTY_MESSAGE } from "../../core/review/emptyState";
 import type { ReviewAgentHighlight, ReviewSharedNote } from "../../session/reviewSharedState";
 import type { ClientReviewMirrorFileSlot } from "../mirror/clientReviewMirror";
 import type { NoteComposer } from "../notes/composerStore";
@@ -54,7 +61,7 @@ import {
 } from "./FileSection";
 import type { ReviewViewedStatus } from "../viewed/viewedFiles";
 import { planReviewFileRender, reviewDrawnRows, type ReviewFileRenderPlan } from "./fileProjection";
-import type { ReviewFileGeometry } from "./hunkGeometry";
+import { estimateReviewFileGeometry, type ReviewFileGeometry } from "./hunkGeometry";
 import { StreamMeasurements } from "./streamMeasurements";
 
 const NO_HIGHLIGHTS: readonly ReviewAgentHighlight[] = [];
@@ -76,8 +83,12 @@ const EDGE_HOLD_MAX_MS = 5_000;
 /** How long scrolling must pause before the viewport counts as settled. */
 const SCROLL_SETTLE_MS = 120;
 
-/** How long a reveal into a file that has not drawn yet waits to be corrected. */
-const PENDING_REVEAL_MS = 3_000;
+/**
+ * How long a reveal keeps its target in place after a load has finished: the target's own
+ * file drawing (a hunk placed by estimate), or files around it drawing taller or shorter than
+ * they reserved. Rapid jumps land before those files draw.
+ */
+const REVEAL_SETTLE_MS = 3_000;
 
 /** Space left between the sticky file header and a revealed hunk. */
 const REVEAL_MARGIN_PX = 8;
@@ -116,6 +127,11 @@ export interface ReviewStreamController {
   subscribeLayout(listener: () => void): () => void;
   /** Scroll the stream to one offset, as the reader moving by hand. */
   scrollTo(top: number): void;
+  /**
+   * Adopt a viewport move that has not settled yet as the selection now, so a command that
+   * reads the selection starts from where the last scroll left the reader.
+   */
+  settle(): void;
 }
 
 export interface ReviewStreamProps {
@@ -156,8 +172,15 @@ export interface ReviewStreamProps {
   viewed?: ReviewViewedControls;
   /** The keymap's chord for toggling the selected file's viewed mark, shown on its header. */
   viewedKeyHint?: string;
-  /** What an empty stream says, when the page knows better than "no files". */
+  /** What an empty stream says, when the page knows better than an empty review. */
   emptyMessage?: ReactNode;
+  /** True while the review's first generation is still loading file by file. */
+  loading?: boolean;
+  /**
+   * The files near the viewport, in review order, each time that set changes — loaded or
+   * not, so the page can load the ones still missing first.
+   */
+  onViewportFiles?: (fileKeys: readonly string[]) => void;
 }
 
 const NO_COLLAPSED: ReadonlySet<string> = new Set();
@@ -202,8 +225,31 @@ interface RevealHold {
   hunkIndex?: number;
   /** The target's offset from the top of the viewport right after the reveal. */
   viewportY: number;
-  /** Set while the target's file has not drawn and the reveal still needs correcting. */
-  pendingUntil?: number;
+  /** Where the target and the viewport were in the stream when the hold last placed it. */
+  top: number;
+  scrollTop: number;
+  /** Until when, once the review has loaded, layout around the target is still followed. */
+  settleUntil: number;
+  /**
+   * Set until the reader takes over (wheel, touch, pointer, key, or a scroll command): files
+   * around the target that change height as they draw or land leave the target where the
+   * reveal put it, and the selection stays on it, for `settleUntil` and for as long as a long
+   * review is still loading.
+   */
+  followLayout?: true;
+}
+
+/** Where the stream scrolls to put a reveal target at its place in the viewport. */
+function revealScrollTop(targetTop: number, hunkIndex: number | undefined) {
+  return hunkIndex === undefined
+    ? targetTop
+    : targetTop - STREAM_HEADER_HEIGHT_PX - REVEAL_MARGIN_PX;
+}
+
+/** End a reveal's corrections: the reader has moved, so nothing pulls the viewport back. */
+function releaseRevealHold(held: RevealHold | undefined) {
+  if (!held) return;
+  delete held.followLayout;
 }
 
 /** Plans one file per document state, reusing the previous plan when nothing it reads moved. */
@@ -321,6 +367,9 @@ export function ReviewStream(props: ReviewStreamProps) {
   }, [props.composers]);
   const latest = useRef({ props, filesByKey, planOf });
   latest.current = { props, filesByKey, planOf };
+  // The sections only change when the review's files do; a file landing in a slot that was
+  // already shown must not re-observe every section of a long review.
+  const sectionKeys = useMemo(() => slots.map((slot) => slot.key).join("\0"), [slots]);
 
   // Mount files near the viewport; unmount them once they are well outside it.
   useEffect(() => {
@@ -355,7 +404,16 @@ export function ReviewStream(props: ReviewStreamProps) {
       observer.observe(section);
     }
     return () => observer.disconnect();
-  }, [slots]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sectionKeys]);
+
+  // Tell the page which files the reader is about to see, so the missing ones load first.
+  useEffect(() => {
+    const { props: current } = latest.current;
+    current.onViewportFiles?.(
+      current.slots.filter((slot) => mounted.has(slot.key)).map((slot) => slot.key),
+    );
+  }, [mounted, sectionKeys]);
 
   /**
    * Where one reveal target sits in stream coordinates, and whether that is measured.
@@ -394,16 +452,16 @@ export function ReviewStream(props: ReviewStreamProps) {
       if (!root || !target) return;
       // An explicit jump wins over keeping the reader's place across a reload.
       releasePin.current?.();
-      root.scrollTop =
-        hunkIndex === undefined
-          ? target.top
-          : target.top - STREAM_HEADER_HEIGHT_PX - REVEAL_MARGIN_PX;
+      root.scrollTop = revealScrollTop(target.top, hunkIndex);
       const landed = targetTop(fileKey, hunkIndex) ?? target;
       hold.current = {
         fileKey,
         ...(hunkIndex !== undefined ? { hunkIndex } : {}),
         viewportY: landed.top - root.scrollTop,
-        ...(target.exact ? {} : { pendingUntil: performance.now() + PENDING_REVEAL_MS }),
+        top: landed.top,
+        scrollTop: root.scrollTop,
+        settleUntil: performance.now() + REVEAL_SETTLE_MS,
+        followLayout: true,
       };
     },
     [targetTop],
@@ -437,19 +495,54 @@ export function ReviewStream(props: ReviewStreamProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hunkToken]);
 
-  // A file that drew corrects a reveal that had to estimate where its hunk was.
+  /**
+   * Scroll a followed reveal's target back to its place when the stream moved it, and say
+   * whether the reveal is still being followed. A target the end of the stream kept lower than
+   * its place rises to it once the stream grows.
+   *
+   * Once the review has loaded, following lasts `REVEAL_SETTLE_MS`, and a viewport that moved
+   * on its own (not with the target, as the browser's scroll anchoring moves it, and not
+   * clamped by a stream that shrank) is the reader, which ends it. While a long review loads,
+   * only the reader's input ends it, since landing files move the viewport in every way.
+   */
+  const followReveal = useCallback(() => {
+    const root = scrollRef.current;
+    const held = hold.current;
+    if (!root || !held?.followLayout) return false;
+    const loading = latest.current.props.loading === true;
+    if (!loading && performance.now() > held.settleUntil) {
+      releaseRevealHold(held);
+      return false;
+    }
+    const target = targetTop(held.fileKey, held.hunkIndex);
+    if (!target) return true;
+    const top = revealScrollTop(target.top, held.hunkIndex);
+    // A viewport that ended up at the target's place (the browser's scroll anchoring, or a
+    // stream that grew under a clamped reveal) is where the reveal wanted it, whoever moved it.
+    if (!loading && Math.abs(root.scrollTop - top) > HOLD_TOLERANCE_PX) {
+      const scrolled = root.scrollTop - held.scrollTop;
+      const clamped = scrolled < 0 && root.scrollTop >= root.scrollHeight - root.clientHeight - 1;
+      const followedTarget = Math.abs(scrolled - (target.top - held.top)) <= HOLD_TOLERANCE_PX;
+      if (Math.abs(scrolled) > HOLD_TOLERANCE_PX && !clamped && !followedTarget) {
+        releaseRevealHold(held);
+        return false;
+      }
+    }
+    if (Math.abs(root.scrollTop - top) >= 1) root.scrollTop = top;
+    held.viewportY = target.top - root.scrollTop;
+    held.top = target.top;
+    held.scrollTop = root.scrollTop;
+    return true;
+  }, [targetTop]);
+
+  // A file that drew corrects a reveal that had to estimate where its hunk was, or that the
+  // file pushed out of place.
   const onGeometry = useCallback(
     (fileKey: string, geometry: ReviewFileGeometry) => {
       geometries.set(fileKey, geometry);
-      const held = hold.current;
-      if (held?.pendingUntil === undefined || held.fileKey !== fileKey) return;
-      if (performance.now() > held.pendingUntil) {
-        delete held.pendingUntil;
-        return;
-      }
-      reveal(fileKey, held.hunkIndex);
+      followReveal();
     },
-    [reveal],
+    [followReveal],
   );
 
   /** Adopt the hunk nearest the middle of the viewport as the selection. */
@@ -458,7 +551,7 @@ export function ReviewStream(props: ReviewStreamProps) {
     if (!root) return;
     const held = hold.current;
     if (held) {
-      if (held.pendingUntil !== undefined && performance.now() <= held.pendingUntil) return;
+      if (followReveal()) return;
       const target = targetTop(held.fileKey, held.hunkIndex);
       if (target && Math.abs(target.top - root.scrollTop - held.viewportY) <= HOLD_TOLERANCE_PX) {
         return;
@@ -472,34 +565,53 @@ export function ReviewStream(props: ReviewStreamProps) {
     const file = fileKey ? latest.current.filesByKey.get(fileKey) : undefined;
     if (!section || !fileKey || !file) return;
     const offset = center - section.offsetTop - STREAM_HEADER_HEIGHT_PX;
-    const geometry = geometries.get(fileKey);
-    const hunkIndex = geometry
-      ? reviewHunkIndexAtOffset(file.hunks.length, (index) => geometry.hunks[index], offset)
-      : 0;
+    // A file that has not drawn is read from the rows it reserves, so a key pressed before it
+    // draws starts from the hunk the reader will see there.
+    const geometry =
+      geometries.get(fileKey) ??
+      estimateReviewFileGeometry(
+        reviewDrawnRows(latest.current.planOf(file)),
+        latest.current.props.layout,
+        STREAM_ROW_HEIGHT_PX,
+      );
+    const hunkIndex = reviewHunkIndexAtOffset(
+      file.hunks.length,
+      (index) => geometry.hunks[index],
+      offset,
+    );
     latest.current.props.onViewportAnchor(fileKey, hunkIndex);
-  }, [targetTop]);
+  }, [followReveal, targetTop]);
 
-  // Anchor once scrolling pauses. Wheel, touch, and pointer input also end a pending reveal:
-  // the reader has taken over.
+  // Anchor once scrolling pauses, or at once when a command needs the selection first. Wheel,
+  // touch, pointer, and key input also end a reveal's corrections: the reader has taken over.
   const settleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const onScroll = useCallback(() => {
+  const settle = useCallback(() => {
+    if (settleTimer.current === undefined) return;
     clearTimeout(settleTimer.current);
-    settleTimer.current = setTimeout(anchorToViewport, SCROLL_SETTLE_MS);
+    settleTimer.current = undefined;
+    anchorToViewport();
   }, [anchorToViewport]);
+  const onScroll = useCallback(() => {
+    // Read the scroll before the files it brings near mount and move things: a viewport the
+    // reader moved ends the reveal's following here.
+    followReveal();
+    clearTimeout(settleTimer.current);
+    settleTimer.current = setTimeout(settle, SCROLL_SETTLE_MS);
+  }, [followReveal, settle]);
   useEffect(() => {
     const root = scrollRef.current;
     if (!root) return;
-    const takeOver = () => {
-      if (hold.current) delete hold.current.pendingUntil;
-    };
+    const takeOver = () => releaseRevealHold(hold.current);
     root.addEventListener("wheel", takeOver, { passive: true });
     root.addEventListener("touchstart", takeOver, { passive: true });
     root.addEventListener("pointerdown", takeOver);
+    root.addEventListener("keydown", takeOver);
     return () => {
       clearTimeout(settleTimer.current);
       root.removeEventListener("wheel", takeOver);
       root.removeEventListener("touchstart", takeOver);
       root.removeEventListener("pointerdown", takeOver);
+      root.removeEventListener("keydown", takeOver);
     };
   }, []);
 
@@ -508,10 +620,14 @@ export function ReviewStream(props: ReviewStreamProps) {
     const scrollBy = (top: number) => {
       const root = scrollRef.current;
       if (!root) return;
-      if (hold.current) delete hold.current.pendingUntil;
+      releaseRevealHold(hold.current);
       // Page keys arrive on the document, not the stream, so they release the reload pin here.
       releasePin.current?.();
+      const before = root.scrollTop;
       root.scrollTop += top;
+      // The scroll event comes a frame later; a key pressed sooner must still find this move
+      // unsettled.
+      if (root.scrollTop !== before) onScroll();
     };
     controller.current = {
       element: () => scrollRef.current,
@@ -545,6 +661,7 @@ export function ReviewStream(props: ReviewStreamProps) {
         const root = scrollRef.current;
         if (root) scrollBy(top - root.scrollTop);
       },
+      settle,
       scroll(direction, unit) {
         const root = scrollRef.current;
         if (!root) return;
@@ -583,7 +700,7 @@ export function ReviewStream(props: ReviewStreamProps) {
       releasePin.current?.();
       controller.current = null;
     };
-  }, [controller]);
+  }, [controller, onScroll, settle]);
 
   // Keep the reader's place by file across a document swap.
   const anchor = useRef<{ key: string; offset: number } | undefined>(undefined);
@@ -606,6 +723,8 @@ export function ReviewStream(props: ReviewStreamProps) {
     anchor.current = undefined;
     const root = scrollRef.current;
     if (!saved || !root) return;
+    // The swap keeps the reader's place by the top file; an earlier reveal stops correcting.
+    releaseRevealHold(hold.current);
     // Mounted files re-render and re-highlight after this commit and can change height above
     // the anchor, so the anchor is re-applied each frame for a moment — until the reader
     // takes over by scrolling themselves.
@@ -665,6 +784,9 @@ export function ReviewStream(props: ReviewStreamProps) {
           heights.set(key, entry.contentRect.height);
         }
       }
+      // Bodies around a revealed target changed height; scroll it back to its place before
+      // paint.
+      followReveal();
       for (const listener of Array.from(layoutListeners.current)) listener();
     });
     bodyObserver.current = observer;
@@ -673,7 +795,7 @@ export function ReviewStream(props: ReviewStreamProps) {
       observer.disconnect();
       bodyObserver.current = undefined;
     };
-  }, []);
+  }, [followReveal]);
 
   // A file that collapses unmounts its diff view while staying in the mounted window,
   // so its hunk geometry would outlive the drawing it describes.
@@ -741,7 +863,7 @@ export function ReviewStream(props: ReviewStreamProps) {
         );
       })}
       {slots.length === 0 ? (
-        <p className="stream-empty">{props.emptyMessage ?? "No files in this review."}</p>
+        <p className="stream-empty">{props.emptyMessage ?? REVIEW_EMPTY_MESSAGE}</p>
       ) : null}
     </div>
   );

@@ -382,6 +382,13 @@ export function PierreFileView({
       const group = separatorsRef.current.get(gapId) ?? new Set();
       group.add(element);
       separatorsRef.current.set(gapId, group);
+      // The halves of one row hover together, so the pointer lights the whole row.
+      element.addEventListener("pointerenter", () => {
+        for (const half of group) half.dataset.hover = "";
+      });
+      element.addEventListener("pointerleave", () => {
+        for (const half of group) delete half.dataset.hover;
+      });
       return element;
     },
   };
@@ -544,7 +551,12 @@ export function PierreFileView({
   const rail = selectedHunk === undefined ? undefined : geometry?.hunks[selectedHunk];
   return (
     <div className="pierre-frame">
-      <div className="pierre-host" ref={hostRef} onClick={onClick} />
+      <div
+        className="pierre-host"
+        ref={hostRef}
+        data-wrap={wrapLines ? "" : undefined}
+        onClick={onClick}
+      />
       {rail ? (
         <div
           className="hunk-rail"

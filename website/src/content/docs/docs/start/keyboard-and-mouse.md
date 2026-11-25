@@ -56,6 +56,7 @@ Hunk may offer to save view changes on quit. Saving writes personal preferences 
 | --------------- | ---------------------------------------------- |
 | `v`             | Start a visual selection from the current line |
 | `y`             | Copy the selection                             |
+| `Y`             | Copy the selected hunk                         |
 | `c`             | Add a note on the current line                 |
 | `Ctrl+S`        | Save the note you are editing                  |
 | `E` / `R` / `D` | Edit, reply to, or delete the active note      |

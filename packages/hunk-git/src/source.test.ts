@@ -69,8 +69,9 @@ describe("gitEndpointSourceSpec", () => {
       path: "a.ts",
     });
     expect(gitEndpointSourceSpec({ kind: "worktree" }, "/repo", "a.ts")).toEqual({
-      kind: "fs",
-      absolutePath: join("/repo", "a.ts"),
+      kind: "worktree",
+      repoRoot: "/repo",
+      path: "a.ts",
     });
   });
 });
@@ -109,7 +110,7 @@ describe("Git source reading", () => {
     expect(await readGitFileSource({ kind: "git-index", repoRoot, path: filePath })).toBe(
       "staged\n",
     );
-    expect(await readGitFileSource({ kind: "fs", absolutePath: join(repoRoot, filePath) })).toBe(
+    expect(await readGitFileSource({ kind: "worktree", repoRoot, path: filePath })).toBe(
       "working tree\n",
     );
   });
@@ -285,9 +286,7 @@ describe("Git byte reading", () => {
       await readGitFileBytes({ kind: "git-blob", repoRoot, ref: "HEAD", path: filePath }),
     ).toEqual(committed);
     expect(await readGitFileBytes({ kind: "git-index", repoRoot, path: filePath })).toEqual(staged);
-    expect(await readGitFileBytes({ kind: "fs", absolutePath: join(repoRoot, filePath) })).toEqual(
-      working,
-    );
+    expect(await readGitFileBytes({ kind: "worktree", repoRoot, path: filePath })).toEqual(working);
     expect(await readGitFileBytes({ kind: "none" })).toBeNull();
   });
 
@@ -304,7 +303,7 @@ describe("Git byte reading", () => {
       ),
     ).resolves.toEqual({ kind: "too-large", maxBytes: 3 });
     await expect(
-      readGitFileBytes({ kind: "fs", absolutePath: join(repoRoot, "icon.png") }, { maxBytes: 3 }),
+      readGitFileBytes({ kind: "worktree", repoRoot, path: "icon.png" }, { maxBytes: 3 }),
     ).resolves.toEqual({ kind: "too-large", maxBytes: 3 });
     expect(
       await readGitFileBytes({ kind: "git-blob", repoRoot, ref: "HEAD", path: "missing.png" }),

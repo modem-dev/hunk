@@ -123,6 +123,20 @@ function retainedJsonBytes(value: unknown, overhead: number): number {
   return utf8ByteLength(serialized) + overhead;
 }
 
+/**
+ * Measure what one parsed session registration and snapshot cost against
+ * `maxRetainedSessionBytes`, as the broker charges them when it admits or updates the session.
+ *
+ * Exported so a producer can tell before it registers whether a broker with the same limits will
+ * hold the session at all. Throws a `TypeError` for a value that is not JSON serializable.
+ */
+export function measureRetainedSessionBytes<Info, State>(
+  registration: SessionRegistration<Info>,
+  snapshot: SessionSnapshot<State>,
+): number {
+  return retainedJsonBytes({ registration, snapshot }, RETAINED_SESSION_OVERHEAD_BYTES);
+}
+
 function describeSessionChoices<ListedSession extends SessionBrokerListedSession>(
   sessions: ListedSession[],
 ) {
@@ -313,10 +327,7 @@ export class SessionBrokerState<
     try {
       // Measure the values the parser actually retains so transforming parsers cannot expand past
       // either the per-session or aggregate ceiling.
-      retainedBytes = retainedJsonBytes(
-        { registration, snapshot },
-        RETAINED_SESSION_OVERHEAD_BYTES,
-      );
+      retainedBytes = measureRetainedSessionBytes(registration, snapshot);
     } catch {
       return "invalid";
     }
@@ -423,10 +434,7 @@ export class SessionBrokerState<
 
     let retainedBytes: number;
     try {
-      retainedBytes = retainedJsonBytes(
-        { registration: entry.registration, snapshot },
-        RETAINED_SESSION_OVERHEAD_BYTES,
-      );
+      retainedBytes = measureRetainedSessionBytes(entry.registration, snapshot);
     } catch {
       return "invalid";
     }

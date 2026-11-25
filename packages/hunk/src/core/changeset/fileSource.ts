@@ -3,6 +3,8 @@ import {
   DEFAULT_SOURCE_TEXT_MAX_BYTES,
   readFileBytesWithLimit,
   readFileTextWithLimit,
+  readWorktreeEntryBytesWithLimit,
+  readWorktreeEntryTextWithLimit,
 } from "@hunk/vcs/source";
 
 export { DEFAULT_SOURCE_BYTES_MAX_BYTES, DEFAULT_SOURCE_TEXT_MAX_BYTES } from "@hunk/vcs/source";
@@ -16,7 +18,17 @@ export { DEFAULT_SOURCE_BYTES_MAX_BYTES, DEFAULT_SOURCE_TEXT_MAX_BYTES } from "@
  * provider-neutral fetcher contracts and filesystem reads.
  */
 
-export type FileSourceSpec = { kind: "none" } | { kind: "fs"; absolutePath: string };
+/**
+ * Where one side's full source lives.
+ *
+ * `fs` reads a path the user named directly and follows symlinks, as the file-pair diff did.
+ * `worktree` reads an entry inside a VCS checkout with blob semantics: a symlink yields its link
+ * target text and is never dereferenced, so a link cannot expose a file outside the checkout.
+ */
+export type FileSourceSpec =
+  | { kind: "none" }
+  | { kind: "fs"; absolutePath: string }
+  | { kind: "worktree"; repoRoot: string; path: string };
 
 export type FileSourceSide = "old" | "new";
 
@@ -64,11 +76,15 @@ interface ResolvedSpecs {
   new: FileSourceSpec;
 }
 
+/** Read one present side as text, raising when it exceeds the expanded-context ceiling. */
 async function readFsSpec(
-  spec: Extract<FileSourceSpec, { kind: "fs" }>,
+  spec: Exclude<FileSourceSpec, { kind: "none" }>,
   maxSourceBytes: number,
 ): Promise<string | null> {
-  const result = await readFileTextWithLimit(spec.absolutePath, maxSourceBytes);
+  const result =
+    spec.kind === "worktree"
+      ? await readWorktreeEntryTextWithLimit(spec.repoRoot, spec.path, maxSourceBytes)
+      : await readFileTextWithLimit(spec.absolutePath, maxSourceBytes);
   if (typeof result === "object" && result !== null) {
     throw new SourceTextTooLargeError(result.maxBytes);
   }
@@ -113,7 +129,10 @@ async function readFileSourceSpecBytes(spec: FileSourceSpec, maxBytes: number) {
     return null;
   }
 
-  const result = await readFileBytesWithLimit(spec.absolutePath, maxBytes);
+  const result =
+    spec.kind === "worktree"
+      ? await readWorktreeEntryBytesWithLimit(spec.repoRoot, spec.path, maxBytes)
+      : await readFileBytesWithLimit(spec.absolutePath, maxBytes);
   return result instanceof Uint8Array ? result : null;
 }
 

@@ -13,7 +13,9 @@
  * reach the same handlers, keyed by the shared catalog's ids. Hunk and file navigation and the
  * gap toggle lower through `lowerAppCommandToReviewIntent` and apply to the local store, so
  * `]` here and `]` in the terminal plan the same move; scrolling, layout, and theme are this
- * page's own.
+ * page's own. Every command first settles the stream's viewport, so a scroll still inside its
+ * quiet period (`g`, Space, the wheel) is the selection the next command reads: keys pressed
+ * in a burst land where the same keys pressed slowly do, each applying to the last one's result.
  *
  * The session's shared state (`../mirror/clientSharedStateMirror.ts`) supplies what the page shows
  * beyond files: notes (adopted into the store by the session wiring), sidecar annotations,
@@ -36,9 +38,12 @@ import {
   type CSSProperties,
   type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 import { selectActiveRevealNoteId } from "../../core/review/selectors";
+import { activateFirstNoteOfSelection } from "../notes/noteActivation";
 import { reviewFileMatchesFilter } from "../../core/review/selectors";
+import { REVIEW_FILTER_NO_MATCH_MESSAGE } from "../../core/review/emptyState";
 import { lowerAppCommandToReviewIntent } from "../../core/run/commandCatalog";
 import { formatKeyChord } from "../../core/run/keyChordLabels";
 import { reviewErrorMessage } from "../../session/reviewErrorCatalog";
@@ -49,6 +54,7 @@ import { defaultWebKeymap, webCommandChords, type WebKeymap } from "../commands/
 import { useWebKeyboard } from "../commands/useWebKeyboard";
 import {
   buildWebCommands,
+  type WebCommand,
   type WebCommandHandlers,
   type WebCommandInvocation,
   type WebImplementedCommandId,
@@ -71,6 +77,7 @@ import {
   loadWebThemeIndex,
   readStoredThemeId,
   resolveSessionWebTheme,
+  sessionThemeId,
   sessionCustomWebTheme,
   storeThemeId,
   type WebThemeIndex,
@@ -199,18 +206,19 @@ function useWebTheme(sessionTheme: ReviewThemeDefaults | undefined) {
     const builtIn = index?.themes ?? [];
     if (!sessionTheme) return builtIn;
     const custom = sessionTheme.kind === "custom" ? sessionCustomWebTheme(sessionTheme) : undefined;
-    const sessionLabel =
-      custom?.label ?? builtIn.find((candidate) => candidate.id === sessionTheme.id)?.label;
+    const sessionId = sessionThemeId(sessionTheme, prefersDark);
+    const sessionBuiltIn = builtIn.find((candidate) => candidate.id === sessionId);
+    const sessionLabel = custom?.label ?? sessionBuiltIn?.label;
     return [
       {
         id: SESSION_THEME_OPTION_ID,
         label: `Use session theme${sessionLabel ? ` (${sessionLabel})` : ""}`,
-        appearance: sessionTheme.appearance,
+        appearance: sessionBuiltIn?.appearance ?? sessionTheme.appearance,
       },
       ...(custom ? [custom] : []),
       ...builtIn,
     ];
-  }, [index, sessionTheme]);
+  }, [index, sessionTheme, prefersDark]);
   const selectedId =
     themeId !== undefined && options.some((option) => option.id === themeId)
       ? themeId
@@ -310,7 +318,9 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     });
   }, []);
 
-  const sidebarOpen = preferences.sidebarOpen ?? defaultSidebarOpen(window.innerWidth, columnWidth);
+  const sidebarOpen =
+    preferences.sidebarOpen ??
+    defaultSidebarOpen(window.innerWidth, columnWidth, presentation?.view.sidebar);
   // The side panel's frame is this browser's; its tools are separate modules (`../panel/`).
   const [panel, setPanel] = useState<SidePanelPreferences>(() => readSidePanelPreferences());
   const updatePanel = useCallback((next: Partial<SidePanelPreferences>, store = true) => {
@@ -509,9 +519,13 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
       return;
     }
     if (!agentReveal || token <= lastAgentReveal.current) return;
-    // A target file still loading is not handled yet: the effect runs again as files arrive.
+    // A target file still loading is loaded next and handled once it arrives: the effect runs
+    // again as files land.
     const { document } = session.review.store.getSnapshot();
-    if (!document.files.some((file) => file.key === agentReveal.fileKey)) return;
+    if (!document.files.some((file) => file.key === agentReveal.fileKey)) {
+      session.mirror.prioritize("target", [agentReveal.fileKey]);
+      return;
+    }
     lastAgentReveal.current = token;
     setRevealPoint({
       fileKey: agentReveal.fileKey,
@@ -527,6 +541,11 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
       ...(agentReveal.noteId !== undefined ? { activeNoteId: agentReveal.noteId } : {}),
     });
   }, [agentReveal, review.document, session, setRevealPoint]);
+  // The files the stream is about to draw load ahead of the rest of a long review.
+  const prioritizeViewport = useCallback(
+    (fileKeys: readonly string[]) => session.mirror.prioritize("viewport", fileKeys),
+    [session],
+  );
   // A note the selection asks to show is where its hunk reveal lands, when nothing more exact
   // (an agent's line) is pending for that file.
   const noteToReveal = review.reveal.scrollToNote ? selectActiveRevealNoteId(review) : undefined;
@@ -739,6 +758,11 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
       ) {
         viewedRef.current.openForHunk(outcome.fileKey);
       }
+      // Annotated navigation lands on a hunk's first stored note, so `E`, `R`, and `D` have a
+      // note to act on without a click.
+      if (intent.type === "selection/move" && intent.scope === "annotated-hunk") {
+        activateFirstNoteOfSelection(session.review);
+      }
     };
     const stream = () => streamController.current;
     const handlers: WebCommandHandlers = {
@@ -797,7 +821,15 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
       // Finding: help (`./useReviewTools.tsx`, with the palette and go-to-file).
       "hunk.app.toggleHelp": () => toolsRef.current?.toggleHelp(),
     };
-    return buildWebCommands(handlers);
+    return buildWebCommands(handlers).map(
+      (command): WebCommand => ({
+        ...command,
+        run: (invocation) => {
+          stream()?.settle();
+          command.run(invocation);
+        },
+      }),
+    );
   }, [session, updatePreferences]);
   // Page commands with plain chords (`hunk.web.*`, declared in `webLocalCommands.ts`) join the
   // catalogued ones on the keyboard; the palette and help list them from the same declaration.
@@ -836,7 +868,13 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
     [updatePanel],
   );
   const pageCommands = useMemo(
-    () => [...commands, ...webLocalKeyCommands((id) => panelHandlers[id]?.())],
+    () => [
+      ...commands,
+      ...webLocalKeyCommands((id) => {
+        streamController.current?.settle();
+        panelHandlers[id]?.();
+      }),
+    ],
     [commands, panelHandlers],
   );
   const pageKeymap = useMemo(() => withWebLocalChords(keymap), [keymap]);
@@ -985,6 +1023,35 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
         : mirror.updating
           ? ({ label: "Updating…", state: "loading" } as const)
           : ({ label: "Connected", state: "connected" } as const);
+
+  // An empty stream says why, in the terminal's order and words: a review with no files gets the
+  // stream's default message, a filter matching nothing says so, and "Hide viewed" hiding
+  // everything the filter left is this page's own case. The last two offer their way back.
+  let streamEmptyMessage: ReactNode | undefined;
+  if (mirror.slots.length > 0 && visibleSlots.length === 0) {
+    streamEmptyMessage = (
+      <>
+        {`${REVIEW_FILTER_NO_MATCH_MESSAGE} `}
+        <button
+          type="button"
+          className="header-action"
+          disabled={sessionEnded}
+          onClick={() => interactive.changeFilter("")}
+        >
+          Clear filter
+        </button>
+      </>
+    );
+  } else if (visibleSlots.length > 0 && streamSlots.length === 0) {
+    streamEmptyMessage = (
+      <>
+        {"Every file here is viewed and hidden. "}
+        <button type="button" className="header-action" onClick={viewed.toggleHideViewed}>
+          Show viewed files
+        </button>
+      </>
+    );
+  }
 
   return (
     <div
@@ -1168,28 +1235,15 @@ export function ReviewApp({ session }: { session: ReviewSession }) {
                   {...(streamRevealPoint ? { revealPoint: streamRevealPoint } : {})}
                   composers={composers}
                   interaction={interactive.interaction}
+                  onViewportFiles={prioritizeViewport}
+                  loading={mirror.status === "loading"}
                   viewedStatuses={viewed.statuses}
                   collapsedFiles={viewed.collapsed}
                   viewed={viewedControls}
                   {...(pageHint("hunk.web.toggleViewed")
                     ? { viewedKeyHint: pageHint("hunk.web.toggleViewed") }
                     : {})}
-                  {...(streamSlots.length === 0 && visibleSlots.length > 0
-                    ? {
-                        emptyMessage: (
-                          <>
-                            {"Every file here is viewed and hidden. "}
-                            <button
-                              type="button"
-                              className="header-action"
-                              onClick={viewed.toggleHideViewed}
-                            >
-                              Show viewed files
-                            </button>
-                          </>
-                        ),
-                      }
-                    : {})}
+                  {...(streamEmptyMessage ? { emptyMessage: streamEmptyMessage } : {})}
                 />
                 {showMinimap ? (
                   <Minimap

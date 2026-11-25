@@ -234,6 +234,62 @@ describe("GitHub command dispatch", () => {
   });
 });
 
+describe("GitHub browser review delegation", () => {
+  test("forwards --web, --no-open, and --no-watch into the delegated patch review", async () => {
+    const temporaryRoot = createTestDirectory();
+    const registration = registerTestExtension(
+      createGitHubPrExtension({
+        temporaryRoot,
+        env: {},
+        fetchImpl: createTestPullRequestFetch("diff --git a/src/a.ts b/src/a.ts\n"),
+      }),
+    );
+    if (!registration.handler || !registration.shutdown) {
+      throw new Error("Expected command and shutdown registrations.");
+    }
+
+    const output = createTestContext();
+    const result = await registration.handler(
+      ["pr", "123", "--repo", "modem-dev/hunk", "--web", "--no-open", "--no-watch"],
+      output.context,
+    );
+    if (result.kind !== "delegate") throw new Error("Expected patch delegation.");
+    expect(result.argv[0]).toBe("patch");
+    expect(result.argv.slice(2)).toEqual(["--web", "--no-open", "--no-watch"]);
+    expect(result.review).toMatchObject({ kind: "change-request", id: "#123" });
+    await registration.shutdown({}, {} as never);
+  });
+
+  test("refuses --no-open without --web before contacting GitHub", async () => {
+    let fetches = 0;
+    const registration = registerTestExtension(
+      createGitHubPrExtension({
+        temporaryRoot: createTestDirectory(),
+        env: {},
+        fetchImpl: (async () => {
+          fetches += 1;
+          return new Response("");
+        }) as GitHubFetch,
+      }),
+    );
+    if (!registration.handler) throw new Error("Expected a command registration.");
+
+    const output = createTestContext();
+    for (const args of [
+      ["pr", "123", "--repo", "modem-dev/hunk", "--no-open"],
+      ["commit", "modem-dev/hunk@abcdef1", "--no-open"],
+      ["compare", "main...feature", "--repo", "modem-dev/hunk", "--", "--no-open"],
+    ]) {
+      await expect(registration.handler(args, output.context)).rejects.toMatchObject({
+        message: "`--no-open` only applies to `--web`.",
+        suggestions: ["Add `--web` to serve the review in a browser, or drop `--no-open`."],
+      });
+    }
+    expect(fetches).toBe(0);
+    expect(output.stderr).toEqual([]);
+  });
+});
+
 describe("GitHub branch PR dispatch", () => {
   test("discovers through a fork commit and fetches the diff from the upstream base", async () => {
     const temporaryRoot = createTestDirectory();

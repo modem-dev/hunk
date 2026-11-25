@@ -462,6 +462,12 @@ reject after the handler settles. SIGINT and SIGTERM abort
 direct process stream access cannot be enforced by these capabilities and must
 be avoided.
 
+A delegated command parses its argv exactly as if the user had typed it, so the
+handler decides which of its own arguments reach the review. Forward `--web`,
+`--no-open`, and `--no-watch` to let a delegated review run in the browser the
+way `hunk gh pr 123 --web` does; Hunk applies their usual rules, including the
+`--no-open` without `--web` refusal, to the delegated argv.
+
 Bare `hunk --help` remains static and does not load extensions. The extension
 owns `hunk <name> --help` and receives `--help` unchanged.
 

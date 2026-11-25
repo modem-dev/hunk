@@ -187,7 +187,7 @@ describe("extension sidebar views", () => {
         `      });\n` +
         `    },\n` +
         `  });\n` +
-        `  hunk.registerCommand({ id: "toggle-probe", title: "Toggle probe", key: "Y" }, (ctx) => {\n` +
+        `  hunk.registerCommand({ id: "toggle-probe", title: "Toggle probe", key: "X" }, (ctx) => {\n` +
         `    ctx.sidebars.toggle("probe");\n` +
         `  });\n` +
         `}\n`,
@@ -204,7 +204,7 @@ describe("extension sidebar views", () => {
       expect(setup.captureCharFrame()).not.toContain("EXTSIDEBAR");
 
       await act(async () => {
-        await setup.mockInput.typeText("Y");
+        await setup.mockInput.typeText("X");
       });
       await flushUntil(
         setup,
@@ -229,7 +229,7 @@ describe("extension sidebar views", () => {
 
       // The same key closes it again.
       await act(async () => {
-        await setup.mockInput.typeText("Y");
+        await setup.mockInput.typeText("X");
       });
       await flushUntil(
         setup,
@@ -339,7 +339,7 @@ describe("extension sidebar views", () => {
       extPath,
       `import { appendFileSync } from "node:fs";\n` +
         `export default function (hunk) {\n` +
-        `  hunk.registerCommand({ id: "probe", title: "Probe selection", key: "Y" }, (ctx) => {\n` +
+        `  hunk.registerCommand({ id: "probe", title: "Probe selection", key: "X" }, (ctx) => {\n` +
         `    const file = ctx.selection.file;\n` +
         `    const line = ctx.selection.currentLine;\n` +
         `    appendFileSync(\n` +
@@ -368,7 +368,7 @@ describe("extension sidebar views", () => {
       // The review opens on the first file's first hunk, and the handler sees
       // exactly that without having tracked anything itself.
       await act(async () => {
-        await setup.mockInput.typeText("Y");
+        await setup.mockInput.typeText("X");
       });
       await flushUntil(
         setup,
@@ -386,7 +386,7 @@ describe("extension sidebar views", () => {
       await act(async () => {
         setup.renderer.keyInput.emit("keypress", createTestKeyEvent({ name: "x", sequence: "x" }));
         setup.renderer.keyInput.emit("keypress", createTestKeyEvent({ name: "j", sequence: "j" }));
-        setup.renderer.keyInput.emit("keypress", createTestKeyEvent({ name: "Y", sequence: "Y" }));
+        setup.renderer.keyInput.emit("keypress", createTestKeyEvent({ name: "X", sequence: "X" }));
       });
       await flushUntil(
         setup,
@@ -409,7 +409,7 @@ describe("extension sidebar views", () => {
       // one input flush. The command must receive them as one coherent address.
       await act(async () => {
         setup.renderer.keyInput.emit("keypress", createTestKeyEvent({ name: "j", sequence: "j" }));
-        setup.renderer.keyInput.emit("keypress", createTestKeyEvent({ name: "Y", sequence: "Y" }));
+        setup.renderer.keyInput.emit("keypress", createTestKeyEvent({ name: "X", sequence: "X" }));
       });
       await flushUntil(
         setup,
@@ -431,7 +431,7 @@ describe("extension sidebar views", () => {
       extPath,
       `import { writeFileSync } from "node:fs";\n` +
         `export default function (hunk) {\n` +
-        `  hunk.registerCommand({ id: "snapshot", title: "Snapshot review", key: "Y" }, (ctx) => {\n` +
+        `  hunk.registerCommand({ id: "snapshot", title: "Snapshot review", key: "X" }, (ctx) => {\n` +
         `    const snapshot = ctx.review.snapshot();\n` +
         `    writeFileSync(${JSON.stringify(snapshotPath)}, JSON.stringify(snapshot));\n` +
         `  });\n` +
@@ -465,7 +465,7 @@ describe("extension sidebar views", () => {
       );
 
       await act(async () => {
-        await setup.mockInput.typeText("Y");
+        await setup.mockInput.typeText("X");
       });
       await flushUntil(setup, () => existsSync(snapshotPath), "the extension snapshot to write");
 
@@ -503,7 +503,7 @@ describe("extension sidebar views", () => {
       extPath,
       `import { appendFileSync } from "node:fs";\n` +
         `export default function (hunk) {\n` +
-        `  hunk.registerCommand({ id: "probe", title: "Probe selection", key: "Y" }, (ctx) => {\n` +
+        `  hunk.registerCommand({ id: "probe", title: "Probe selection", key: "X" }, (ctx) => {\n` +
         `    appendFileSync(${JSON.stringify(logPath)}, String(ctx.selection.currentLine === null) + "\\n");\n` +
         `  });\n` +
         `}\n`,
@@ -518,7 +518,7 @@ describe("extension sidebar views", () => {
         "the review to render with its current-line marker disabled",
       );
       await act(async () => {
-        await setup.mockInput.typeText("Y");
+        await setup.mockInput.typeText("X");
       });
       await flushUntil(
         setup,
@@ -539,7 +539,7 @@ describe("extension sidebar views", () => {
         `    id: "probe",\n` +
         `    component: () => createElement("text", { content: "EXTSIDEBAR" }),\n` +
         `  });\n` +
-        `  hunk.registerCommand({ id: "open-probe", title: "Open probe", key: "Y" }, (ctx) => {\n` +
+        `  hunk.registerCommand({ id: "open-probe", title: "Open probe", key: "X" }, (ctx) => {\n` +
         `    ctx.sidebars.open("probe");\n` +
         `  });\n` +
         `}\n`,
@@ -567,7 +567,7 @@ describe("extension sidebar views", () => {
       // Opening an extension pane reveals only that pane; `s` closed the files
       // pane rather than hiding one shared area around both pane states.
       await act(async () => {
-        await setup.mockInput.typeText("Y");
+        await setup.mockInput.typeText("X");
       });
       await flushUntil(
         setup,

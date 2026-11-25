@@ -231,17 +231,20 @@ Review GitHub pull requests, commits, and comparisons. This command is provided 
 ### Usage
 
 ```bash
-hunk gh pr [pull-request] [--repo <[host/]owner/repo>] [-- <patch-options...>]
-hunk gh commit <commit> [--repo <[host/]owner/repo>] [-- <patch-options...>]
-hunk gh compare <base>...<head> [--repo <[host/]owner/repo>] [-- <patch-options...>]
+hunk gh pr [pull-request] [--repo <[host/]owner/repo>] [--web] [--no-open] [--no-watch] [-- <patch-options...>]
+hunk gh commit <commit> [--repo <[host/]owner/repo>] [--web] [--no-open] [--no-watch] [-- <patch-options...>]
+hunk gh compare <base>...<head> [--repo <[host/]owner/repo>] [--web] [--no-open] [--no-watch] [-- <patch-options...>]
 ```
 
 ### Command-specific options
 
-| Option                       | Description                                            |
-| ---------------------------- | ------------------------------------------------------ |
-| `--repo <[host/]owner/repo>` | use an explicit repository instead of the local origin |
-| `-- <patch-options...>`      | pass the remaining options to the `hunk patch` review  |
+| Option                       | Description                                                       |
+| ---------------------------- | ----------------------------------------------------------------- |
+| `--repo <[host/]owner/repo>` | use an explicit repository instead of the local origin            |
+| `--web`                      | serve the review in the browser instead of the terminal           |
+| `--no-open`                  | with --web, print the review URL without opening a browser        |
+| `--no-watch`                 | do not reload when the input changes (overrides --web and config) |
+| `-- <patch-options...>`      | pass the remaining options to the `hunk patch` review             |
 
 Patch options after `--` accept every [common review option](#common-review-options).
 
@@ -254,7 +257,7 @@ Patch options after `--` accept every [common review option](#common-review-opti
 Review a GitHub pull request without requiring the gh CLI.
 
 ```bash
-hunk gh pr [pull-request] [--repo <[host/]owner/repo>] [-- <patch-options...>]
+hunk gh pr [pull-request] [--repo <[host/]owner/repo>] [--web] [--no-open] [--no-watch] [-- <patch-options...>]
 ```
 
 **Pull request forms:**
@@ -264,6 +267,7 @@ hunk gh pr                            # find the open PR for the current branch
 hunk gh pr 123                        # infer owner/repo from the local origin
 hunk gh pr 123 --repo modem-dev/hunk  # use an explicit repository
 hunk gh pr 'modem-dev/hunk#123'       # name the repository and pull request
+hunk gh pr 123 --web                  # review in the browser instead of the terminal
 hunk gh pr https://github.com/modem-dev/hunk/pull/123
 hunk gh pr https://acme.ghe.com/acme/app/pull/123
 ```
@@ -273,7 +277,7 @@ hunk gh pr https://acme.ghe.com/acme/app/pull/123
 Review a GitHub commit without requiring the gh CLI.
 
 ```bash
-hunk gh commit <commit> [--repo <[host/]owner/repo>] [-- <patch-options...>]
+hunk gh commit <commit> [--repo <[host/]owner/repo>] [--web] [--no-open] [--no-watch] [-- <patch-options...>]
 ```
 
 **Commit forms:**
@@ -291,7 +295,7 @@ hunk gh commit https://acme.ghe.com/acme/app/commit/abcdef1
 Review the changes between two GitHub branches, tags, or commits.
 
 ```bash
-hunk gh compare <base>...<head> [--repo <[host/]owner/repo>] [-- <patch-options...>]
+hunk gh compare <base>...<head> [--repo <[host/]owner/repo>] [--web] [--no-open] [--no-watch] [-- <patch-options...>]
 ```
 
 **Compare forms:**

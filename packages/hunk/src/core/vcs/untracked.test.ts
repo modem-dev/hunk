@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildFilesystemUntrackedDiffFile } from "./untracked";
@@ -60,4 +60,31 @@ describe("buildFilesystemUntrackedDiffFile", () => {
     expect(file.patch).not.toContain("No newline at end of file");
     expect(file.patch).not.toContain("\r");
   });
+
+  // Windows needs Developer Mode or elevation to create symlinks, so the swap is Unix-only here.
+  test.skipIf(process.platform === "win32")(
+    "never reads through a symlink swapped in after the untracked file loaded",
+    async () => {
+      const repoRoot = createTestRepoRoot();
+      const outside = createTestRepoRoot();
+      const secret = join(outside, "secret.md");
+      writeFileSync(secret, "outside secret\n");
+      writeFileSync(join(repoRoot, "notes.md"), "reviewed\n");
+
+      const file = buildFilesystemUntrackedDiffFile(repoRoot, "notes.md", 0, repoRoot);
+      expect(file.patch).toContain("+reviewed");
+
+      rmSync(join(repoRoot, "notes.md"));
+      symlinkSync(secret, join(repoRoot, "notes.md"));
+
+      // The fetcher built before the swap reads the entry with blob semantics, not its target.
+      expect(await file.sourceFetcher?.getFullText("new")).toBe(secret);
+
+      // A reload diffs the link as Git does and attaches no source at all.
+      const reloaded = buildFilesystemUntrackedDiffFile(repoRoot, "notes.md", 0, repoRoot);
+      expect(reloaded.patch).toContain(`+${secret}`);
+      expect(reloaded.sourceFetcher).toBeUndefined();
+      expect(reloaded.byteFetcher).toBeUndefined();
+    },
+  );
 });

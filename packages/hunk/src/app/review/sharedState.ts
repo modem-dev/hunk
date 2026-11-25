@@ -22,7 +22,12 @@ import { DOCUMENT_COMMAND_NAMES } from "../../core/run/documentCommandCatalog";
 import { HISTORY_COMMAND_NAMES } from "../../core/run/historyCommandCatalog";
 import { resolveCommandKeys } from "../../core/run/keymap";
 import { STATUS_COMMAND_NAMES } from "../../core/run/statusCommandCatalog";
-import { resolveTheme, THEMES, type AppTheme } from "../../core/theme/appTheme";
+import {
+  resolveTheme,
+  themeFollowsTerminalMode,
+  THEMES,
+  type AppTheme,
+} from "../../core/theme/appTheme";
 import { HUNK_REVIEW_PROTOCOL_VERSION } from "../../session/reviewProtocol";
 import type {
   ReviewAgentHighlight,
@@ -40,9 +45,14 @@ function definedFields<T extends object>(value: T): T {
 }
 
 /** Describe the theme a session resolved: by id when built in, by tokens otherwise. */
-function themeDefaults(theme: AppTheme): ReviewThemeDefaults {
+function themeDefaults(theme: AppTheme, followsTerminalMode: boolean): ReviewThemeDefaults {
   if (THEMES.some((builtIn) => builtIn.id === theme.id)) {
-    return { kind: "builtin", id: theme.id, appearance: theme.appearance };
+    return {
+      kind: "builtin",
+      id: theme.id,
+      appearance: theme.appearance,
+      ...(followsTerminalMode ? { auto: true as const } : {}),
+    };
   }
   const {
     id,
@@ -100,12 +110,16 @@ export function buildReviewPresentationDefaults(
   return {
     title: bootstrap.changeset.title,
     sourceLabel: bootstrap.changeset.sourceLabel,
-    theme: themeDefaults(theme),
+    theme: themeDefaults(
+      theme,
+      themeFollowsTerminalMode(bootstrap.initialTheme, bootstrap.customThemes ?? []),
+    ),
     view: {
       layout: bootstrap.initialMode,
       wrapLines: bootstrap.initialWrapLines ?? false,
       lineNumbers: bootstrap.initialShowLineNumbers ?? true,
       hunkHeaders: bootstrap.initialShowHunkHeaders ?? true,
+      sidebar: bootstrap.initialSidebar ?? "auto",
     },
     keymap: Object.fromEntries(
       APP_COMMAND_CATALOG.map((entry) => [entry.id, [...(keymap.keys.get(entry.id) ?? [])]]),

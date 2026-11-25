@@ -30,6 +30,18 @@ describe("web view preferences", () => {
     expect(defaultSidebarOpen(800, 8)).toBe(false);
   });
 
+  // Intent: `--no-sidebar` stays closed everywhere; `--sidebar` opens on a tight viewport only
+  // while the terminal's minimum files pane and diff still fit.
+  test("follows the session's sidebar choice, collapsing where the terminal has no room", () => {
+    expect(defaultSidebarOpen(1440, 8, "auto")).toBe(true);
+    expect(defaultSidebarOpen(1440, 8, false)).toBe(false);
+    expect(defaultSidebarOpen(1440, 8, true)).toBe(true);
+    expect(defaultSidebarOpen(800, 8, "auto")).toBe(false);
+    expect(defaultSidebarOpen(800, 8, true)).toBe(true);
+    expect(defaultSidebarOpen(72 * 8, 8, true)).toBe(false);
+    expect(defaultSidebarOpen(73 * 8, 8, true)).toBe(true);
+  });
+
   test("keeps the sidebar width in bounds", () => {
     expect(clampSidebarWidth(10)).toBe(SIDEBAR_MIN_WIDTH);
     expect(clampSidebarWidth(5_000)).toBe(SIDEBAR_MAX_WIDTH);
@@ -41,7 +53,12 @@ describe("web view preferences", () => {
   });
 });
 
-const SESSION = { layout: "unified", wrapLines: true, lineNumbers: false } as const;
+const SESSION = {
+  layout: "unified",
+  wrapLines: true,
+  lineNumbers: false,
+  sidebar: "auto",
+} as const;
 
 /** Install a `window.localStorage` for one test; `getItem`/`setItem` may be made to throw. */
 function installTestStorage(initial: string | null, blocked = false) {

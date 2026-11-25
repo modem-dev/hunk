@@ -13,18 +13,37 @@ Add `--web` to a review command:
 hunk diff --web
 hunk show HEAD~1 --web
 hunk diff --staged --web
+hunk gh pr 123 --web
 ```
 
-`--web` works on `diff`, `show`, `stash show`, `patch`, and `difftool`. Hunk starts the review without a terminal UI, prints the review URL once the session daemon has accepted the review, opens it in your default browser, and stays in the foreground until you press Ctrl+C. Ctrl+C ends the review; an open page then says the session has ended.
+`--web` works on `diff`, `show`, `stash show`, `patch`, `difftool`, and the GitHub commands `gh pr`, `gh commit`, and `gh compare`. Hunk starts the review without a terminal UI, prints the review URL once the session daemon has accepted the review, opens it in your default browser, and stays in the foreground until you press Ctrl+C. Ctrl+C ends the review; an open page then says the session has ended.
 
-Standard output is exactly the URL, so a script can capture it. At a terminal, one line follows on standard error: `hunk: review ready in your browser. Press Ctrl+C to stop.`, or `hunk: open the URL above in a browser. Press Ctrl+C to stop.` with `--no-open`. If the daemon restarts, the review keeps serving and reconnects to it; if the terminal running the review goes away, the review ends.
+Standard output is exactly one URL line. The review keeps running and never closes its standard output, so `URL=$(hunk diff --web --no-open)` never returns; see [Use the URL from a script](#use-the-url-from-a-script). At a terminal, one line follows on standard error: `hunk: review ready in your browser. Press Ctrl+C to stop.`, or `hunk: open the URL above in a browser. Press Ctrl+C to stop.` with `--no-open`. If the daemon restarts, the review keeps serving and reconnects to it; if the terminal running the review goes away, the review ends.
 
-| Flag         | Effect                                                                                 |
-| ------------ | -------------------------------------------------------------------------------------- |
-| `--no-open`  | Print the URL without opening a browser.                                               |
-| `--no-watch` | Do not reload when the input changes. With `--web`, Hunk watches its input by default. |
+| Flag         | Effect                                                                                                                         |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| `--no-open`  | Print the URL without opening a browser.                                                                                       |
+| `--no-watch` | Do not reload when the input changes. With `--web`, Hunk watches its input by default unless your config sets `watch = false`. |
 
 Input that cannot be read again, such as `some-command | hunk patch - --web`, is served once without watching, as in [watch mode](/docs/workflows/watch-mode/).
+
+A GitHub review serves the diff Hunk fetched when the command started, exactly as the terminal does. Refresh and watching reread that copy rather than asking GitHub again, so run the command again to see commits pushed since.
+
+### Use the URL from a script
+
+Start the review in the background, send its output to a file, and read the first line once it appears. Stop the review when the script is done:
+
+```bash
+url_file=$(mktemp)
+hunk diff --web --no-open > "$url_file" &
+review=$!
+until [ -s "$url_file" ]; do sleep 0.1; done
+URL=$(head -n 1 "$url_file")
+# ... use "$URL" ...
+kill "$review"
+```
+
+A review that is already running can print its URL again with `hunk session open --repo . --no-open`. In a pipe such as `hunk diff --web --no-open | head -n 1`, the review does not end when `head` exits: as with the terminal UI, it ends on a signal such as Ctrl+C, or at its next write to the closed pipe, which may not come. Stop it yourself.
 
 ### Open a running review
 
@@ -52,7 +71,7 @@ The page and any terminal showing the same review are two views of one session.
 
 - **Shared:** notes and replies, the file filter, whether agent notes are shown, viewed marks, and the review contents after a reload. An agent's `hunk session navigate` and focused comments move every view.
 - **Per view:** your selection and scroll position. Moving in the browser does not move the terminal, and the other way round.
-- **Per browser:** layout, wrap, line numbers, sidebar mode and width, side panel and minimap, **Hide viewed**, and the theme. The page starts on the session's theme, including a custom one; choosing another theme in the page changes only that browser. **Use session theme** in the palette goes back.
+- **Per browser:** layout, wrap, line numbers, sidebar mode and width, side panel and minimap, **Hide viewed**, and the theme. The page starts on the session's theme, including a custom one; with `theme = "auto"`, it picks GitHub light or dark from the browser's color scheme. Choosing another theme in the page changes only that browser. The sidebar starts open or closed from `--sidebar` / `--no-sidebar` and the `sidebar` config setting, and stays closed on a viewport too narrow for it, as in the terminal. **Use session theme** in the palette goes back.
 
 ## Keys
 
@@ -97,7 +116,9 @@ Chords that use Ctrl, Cmd, Alt, Tab, or a function key stay with the browser and
 
 ## Troubleshooting
 
-**The page says "This review link is not valid for that session."** The tab has no access key (for example, an address copied from the address bar after the page loaded), or the key belongs to a session that has ended. Run `hunk session open --repo .` for a current link.
+**The page says "This review link does not match a review the Hunk daemon is serving."** The tab has no access key (for example, an address copied from the address bar after the page loaded), the key belongs to a session that has ended, or the daemon refused the review. Run `hunk session open --repo .` for a current link.
+
+**`hunk diff --web` says the review has more files than the session daemon can hold.** The daemon keeps a bounded amount of data per review, a few thousand changed files, and Hunk exits with status 1 and prints no URL rather than a link that will not load. Narrow the review with a pathspec, for example `hunk diff --web -- src/`. A terminal review of the same changes still works, but shows "Session daemon rejected this review" and cannot be reached with `hunk session` commands.
 
 **The page says "This review session has ended."** The Hunk process that served the review stopped (Ctrl+C, a closed terminal, or a crash). What the page already shows stays readable, but notes, the filter, viewed marks, and refresh are disabled. Run `hunk diff --web` again, or `hunk session open` for a review that is still running.
 

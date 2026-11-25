@@ -40,6 +40,64 @@ describe("changesetFromPatch", () => {
     expect(changeset.files[1]?.path).toBe("other.txt");
   });
 
+  test("gives each plain unified file its own patch when hunk lines look like headers", () => {
+    // A removed `-- x` line beside an added `++ y` line renders as `--- x` / `+++ y`.
+    const changeset = changesetFromPatch(
+      [
+        "--- a/schema.sql",
+        "+++ b/schema.sql",
+        "@@ -1,3 +1,3 @@",
+        " select 1;",
+        "--- old comment",
+        "+++ new comment",
+        " select 2;",
+        "--- a/notes.txt",
+        "+++ b/notes.txt",
+        "@@ -1 +1 @@",
+        "-hello",
+        "+world",
+        "",
+      ].join("\n"),
+      "title",
+      "label",
+      null,
+    );
+
+    expect(changeset.files).toHaveLength(2);
+    expect(changeset.files[0]?.patch).toContain("+++ new comment\n select 2;\n");
+    expect(changeset.files[1]?.patch).toBe(
+      "--- a/notes.txt\n+++ b/notes.txt\n@@ -1 +1 @@\n-hello\n+world\n",
+    );
+  });
+
+  test("keeps the next plain unified file when a hunk header over-promises its counts", () => {
+    const changeset = changesetFromPatch(
+      [
+        "--- a/alpha.txt",
+        "+++ b/alpha.txt",
+        "@@ -1,5 +1,5 @@",
+        "-left",
+        "+right",
+        "--- a/beta.txt",
+        "+++ b/beta.txt",
+        "@@ -1 +1 @@",
+        "-old",
+        "+new",
+        "",
+      ].join("\n"),
+      "title",
+      "label",
+      null,
+    );
+
+    // The over-promising alpha.txt hunk stays unparseable; beta.txt keeps its own patch.
+    expect(changeset.files).toHaveLength(2);
+    const beta = changeset.files[1];
+    expect(beta?.path).toEndWith("beta.txt");
+    expect(beta?.patch).toBe("--- a/beta.txt\n+++ b/beta.txt\n@@ -1 +1 @@\n-old\n+new\n");
+    expect(beta?.stats).toEqual({ additions: 1, deletions: 1 });
+  });
+
   test("keeps good files when one file chunk is unparseable", () => {
     // Regression test: a single poisoned file used to make the whole-patch
     // parse throw, and the catch-all returned zero files for the review.

@@ -5,6 +5,7 @@ import { act } from "react";
 import type { AppBootstrap } from "../core/bootstrap";
 import { createTestVcsAppBootstrap } from "../../../../test/helpers/app-bootstrap";
 import { createTestDiffFile, lines } from "../../../../test/helpers/diff-helpers";
+import { changesetFromPatch } from "../core/changeset/fromPatch";
 import { measureTextWidth } from "./lib/text";
 
 // These tests drive the DiffPane mouse-drag text-selection path end to end: begin/update/end
@@ -743,6 +744,71 @@ describe("DiffPane copy selection", () => {
       await act(async () => {
         setup.renderer.destroy();
       });
+    }
+  });
+});
+
+const TWO_HUNK_PATCH = [
+  "diff --git a/hunks.ts b/hunks.ts",
+  "index 1111111..2222222 100644",
+  "--- a/hunks.ts",
+  "+++ b/hunks.ts",
+  "@@ -1,3 +1,3 @@",
+  " export const first = 1;",
+  "-export const second = 2;",
+  "+export const second = 20;",
+  " export const third = 3;",
+  "@@ -20,3 +20,3 @@",
+  " export const twenty = 20;",
+  "-export const twentyOne = 21;",
+  "+export const twentyOne = 210;",
+  " export const twentyTwo = 22;",
+  "",
+].join("\n");
+
+function createCopySelectedHunkBootstrap(): AppBootstrap {
+  return createTestVcsAppBootstrap({
+    changesetId: "changeset:copy-hunk",
+    files: changesetFromPatch(TWO_HUNK_PATCH, "hunks", "repo", null).files,
+    initialMode: "unified",
+  });
+}
+
+describe("copy selected hunk", () => {
+  test("Y copies the selected hunk and follows hunk navigation", async () => {
+    const { setup, copied } = await renderSelectionApp(createCopySelectedHunkBootstrap());
+
+    try {
+      await act(async () => setup.mockInput.pressKey("Y"));
+      await flush(setup);
+      await act(async () => setup.mockInput.pressKey("]"));
+      await flush(setup);
+      await act(async () => setup.mockInput.pressKey("Y"));
+      await flush(setup);
+
+      expect(copied).toEqual([
+        `${TWO_HUNK_PATCH.split("\n").slice(4, 9).join("\n")}\n`,
+        `${TWO_HUNK_PATCH.split("\n").slice(9, 14).join("\n")}\n`,
+      ]);
+      expect(setup.captureCharFrame()).toContain("Copied hunk to clipboard");
+    } finally {
+      await act(async () => setup.renderer.destroy());
+    }
+  });
+
+  test("Y in the same input burst as ] copies the newly selected hunk", async () => {
+    const { setup, copied } = await renderSelectionApp(createCopySelectedHunkBootstrap());
+
+    try {
+      // One stdin chunk, as a terminal delivers `]Y` typed or pasted together.
+      await act(async () => {
+        setup.renderer.stdin.emit("data", Buffer.from("]Y"));
+      });
+      await flush(setup);
+
+      expect(copied).toEqual([`${TWO_HUNK_PATCH.split("\n").slice(9, 14).join("\n")}\n`]);
+    } finally {
+      await act(async () => setup.renderer.destroy());
     }
   });
 });

@@ -67,6 +67,9 @@ export const WEB_COMMAND_SUPPORT = {
     "The browser selects text natively with the mouse or Shift and the arrow keys.",
   ),
   "hunk.review.copySelection": terminalOnly("The browser copies a native selection itself."),
+  "hunk.review.copySelectedHunk": terminalOnly(
+    "Copies through OSC 52; the browser copies a hunk by selecting its rows natively.",
+  ),
   "hunk.review.clearSelection": terminalOnly("A native selection clears by clicking elsewhere."),
   "hunk.review.startNote": IMPLEMENTED,
   "hunk.review.editActiveNote": IMPLEMENTED,

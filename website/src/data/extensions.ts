@@ -223,6 +223,24 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 25,
   },
   {
+    repo: "mcuste/hunk-markdown-preview",
+    name: "hunk-markdown-preview",
+    summary:
+      "Opens working-tree Markdown in a browser preview and keeps it synchronized with Hunk refreshes.",
+    categories: ["Command"],
+    version: "1.0.0",
+    apiVersion: 33,
+  },
+  {
+    repo: "mcuste/hunk-stage",
+    name: "hunk-stage",
+    summary:
+      "Stages individual Git hunks, composes commits, and opens Lazygit without leaving the terminal.",
+    categories: ["Pane", "Command"],
+    version: "1.0.0",
+    apiVersion: 33,
+  },
+  {
     repo: "meldron/hunk-mark-read",
     name: "hunk-mark-read",
     summary:
@@ -302,6 +320,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     apiVersion: 31,
   },
   {
+    repo: "rupakhetibinit/hunk-review-comments-extension",
+    name: "hunk-review-comments-extension",
+    summary:
+      "Tracks review notes as open, resolved, or disputed comments an agent works through from the CLI, with a status pane and line marks.",
+    categories: ["Pane", "Command", "Line highlighter"],
+    version: "0.1.2",
+    apiVersion: 33,
+  },
+  {
     repo: "sadick254/hunk-commit-log",
     name: "hunk-commit-log",
     summary:
@@ -309,6 +336,15 @@ export const EXTENSION_CATALOG: readonly ExtensionListing[] = [
     categories: ["Pane", "Command", "Changeset transform"],
     version: "0.1.0",
     apiVersion: 6,
+  },
+  {
+    repo: "siargenius/hunk-review-sidebar",
+    name: "hunk-review-sidebar",
+    summary:
+      "Combines file review progress and compact note threads in one pane, with latest-reply authors and colored change metadata. Fork of evantravers/hunk-mark-as-reviewed.",
+    categories: ["Pane", "Command", "Line highlighter", "Changeset transform"],
+    version: "0.3.0",
+    apiVersion: 32,
   },
   {
     repo: "TreeHappy/hunkydory",

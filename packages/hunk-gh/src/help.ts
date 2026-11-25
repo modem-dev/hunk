@@ -60,6 +60,18 @@ export const GITHUB_CLI_REFERENCE: GitHubCliReference = {
       description: "use an explicit repository instead of the local origin",
     },
     {
+      flag: "--web",
+      description: "serve the review in the browser instead of the terminal",
+    },
+    {
+      flag: "--no-open",
+      description: "with --web, print the review URL without opening a browser",
+    },
+    {
+      flag: "--no-watch",
+      description: "do not reload when the input changes (overrides --web and config)",
+    },
+    {
       flag: "-- <patch-options...>",
       description: "pass the remaining options to the `hunk patch` review",
     },
@@ -84,6 +96,7 @@ export const GITHUB_CLI_REFERENCE: GitHubCliReference = {
         { args: "123", description: "infer owner/repo from the local origin" },
         { args: "123 --repo modem-dev/hunk", description: "use an explicit repository" },
         { args: "'modem-dev/hunk#123'", description: "name the repository and pull request" },
+        { args: "123 --web", description: "review in the browser instead of the terminal" },
         { args: "https://github.com/modem-dev/hunk/pull/123" },
         { args: "https://acme.ghe.com/acme/app/pull/123" },
       ],

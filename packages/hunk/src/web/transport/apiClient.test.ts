@@ -216,6 +216,30 @@ describe("ReviewApiClient verification", () => {
     expect(landed.sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
 
+  test("reads in the order a caller picks while reads run", async () => {
+    const started: number[] = [];
+    const client = new ReviewApiClient({
+      sessionId: "s",
+      capability: "c",
+      fetch: async (input) => {
+        started.push(Number(input.split("-").pop()));
+        await Bun.sleep(1);
+        return new Response("abc");
+      },
+      concurrency: 1,
+    });
+    const picks = [2, 0, 1];
+
+    await client.readResources(
+      [0, 1, 2].map((index) => ({ ...createTestDescriptor(), id: `resource-${index}` })),
+      () => undefined,
+      undefined,
+      { next: () => picks.shift() },
+    );
+
+    expect(started).toEqual([2, 0, 1]);
+  });
+
   test("stops reading when aborted", async () => {
     const controller = new AbortController();
     const client = new ReviewApiClient({
