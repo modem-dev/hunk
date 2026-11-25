@@ -161,10 +161,10 @@ for (const overlay of overlays) {
               reopenMs: opens[1],
             }),
           );
-          // Leave headroom for startup highlighting/host-tree construction but reject the
-          // ~300 ms fallback throttle. Keep the differential gate as well as absolute bounds.
+          // Keep the cold-start budget below the ~300 ms Suspense fallback throttle. A warm
+          // reopen can be much faster on shared runners; it must not shrink that first-use budget.
           expect(opens[0]).toBeLessThanOrEqual(idle ? 150 : 200);
-          expect(opens[0]! - opens[1]!).toBeLessThanOrEqual(150);
+          expect(opens[1]).toBeLessThanOrEqual(150);
         } catch (error) {
           const artifacts = mkdtempSync(join(tmpdir(), "hunk-dialog-failure-"));
           writeFileSync(join(artifacts, "output.terminal"), Buffer.concat(chunks));
