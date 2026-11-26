@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { HUNK_VENDOR_EXTENSION_ID } from "../../../extensionIds";
 import type { ExtensionFactory } from "../../../types";
 import type {
   ExtensionPaneProps,
@@ -11,6 +12,18 @@ import { comparisonCommitContent, reviewInfoContent } from "./presentation";
 
 export const BUNDLED_REVIEW_INFO_VIEW_ID = "review-info";
 export const BUNDLED_COMPARISON_REVIEW_INFO_VIEW_ID = "comparison-review-info";
+export const BUNDLED_REVIEW_INFO_TOGGLE_COMMAND_ID = "reviewInfo.toggle";
+
+/** Both review-info panes; at most one is available for any review, so they toggle together. */
+const REVIEW_INFO_VIEW_IDS = [
+  BUNDLED_REVIEW_INFO_VIEW_ID,
+  BUNDLED_COMPARISON_REVIEW_INFO_VIEW_ID,
+] as const;
+
+/** Stable pane keys of the review-info panes, for host menus that reflect their visibility. */
+export const BUNDLED_REVIEW_INFO_PANE_KEYS: readonly string[] = REVIEW_INFO_VIEW_IDS.map(
+  (id) => `${HUNK_VENDOR_EXTENSION_ID}:${id}`,
+);
 
 /** Report whether the bundled pane has a concise projection for this review kind. */
 function supportsReviewInfo(
@@ -22,6 +35,11 @@ function supportsReviewInfo(
   return (
     review?.kind === "change-request" || review?.kind === "commit" || review?.kind === "comparison"
   );
+}
+
+/** Report whether either review-info pane can show anything for this review. */
+export function reviewHasInfoPane(review: ExtensionReviewDescriptor | null): boolean {
+  return supportsReviewInfo(review);
 }
 
 /** Keep fixed summaries separate from the responsive multi-commit pane. */
@@ -232,6 +250,21 @@ const registerBundledReviewInfo: ExtensionFactory = (hunk) => {
     available: ({ review }) => supportsFixedReviewInfo(review),
     component: ReviewInfoPane,
   });
+
+  // Hide or restore the summary (or comparison commit list) in one keypress. Showing either
+  // pane counts as shown, so a reviewer never has to press twice to hide what they see.
+  hunk.registerCommand(
+    { id: BUNDLED_REVIEW_INFO_TOGGLE_COMMAND_ID, title: "Toggle review info pane", key: "I" },
+    (ctx) => {
+      const shown =
+        REVIEW_INFO_VIEW_IDS.some((id) => ctx.panes.isVisible(id)) ||
+        REVIEW_INFO_VIEW_IDS.every((id) => ctx.panes.isOpen(id));
+      for (const id of REVIEW_INFO_VIEW_IDS) {
+        if (shown) ctx.panes.close(id);
+        else ctx.panes.open(id);
+      }
+    },
+  );
 };
 
 /** Register the responsive multi-commit review summary pane. */

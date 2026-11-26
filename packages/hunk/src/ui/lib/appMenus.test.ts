@@ -319,6 +319,42 @@ describe("the Extensions menu", () => {
     ]);
   });
 
+  test("View offers the bundled review-info toggle only when the review has that pane", () => {
+    const toggle = registeredCommand("hunk", "reviewInfo.toggle", "Toggle review info pane", "I");
+    const { commands: builtins } = createTestCommands();
+    const { commands: extensionCommands } = buildExtensionAppCommands({
+      registered: [toggle],
+      builtins: builtinCommandMatchProbes(),
+      runCommand: () => {},
+    });
+    const commands: AppCommand[] = [...builtins, ...extensionCommands];
+
+    const without = buildAppMenus({ commands, extensionCommands, ...MENU_STATE });
+    expect(items(without.view).some((item) => item.label === "Review info pane")).toBe(false);
+
+    const shown = buildAppMenus({
+      commands,
+      extensionCommands,
+      ...MENU_STATE,
+      reviewInfoPaneVisible: true,
+    });
+    const item = entry(shown, "view", "Review info pane");
+    expect([item.hint, item.checked, item.commandId]).toEqual([
+      "I",
+      true,
+      "hunk.reviewInfo.toggle",
+    ]);
+    expect(shown.extensions).toBeUndefined();
+
+    const hidden = buildAppMenus({
+      commands,
+      extensionCommands,
+      ...MENU_STATE,
+      reviewInfoPaneVisible: false,
+    });
+    expect(entry(hidden, "view", "Review info pane").checked).toBe(false);
+  });
+
   test("bundled commands alone leave the Extensions menu absent", () => {
     const menus = menusWithExtensions([
       registeredCommand("hunk", "search.find", "Search diff content", "/"),

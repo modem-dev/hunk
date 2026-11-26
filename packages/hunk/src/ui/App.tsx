@@ -132,6 +132,10 @@ import {
   type PlannedPane,
 } from "./lib/extensionPanes";
 import { HUNK_FILES_PANE_KEY } from "../extensions/extensionIds";
+import {
+  BUNDLED_REVIEW_INFO_PANE_KEYS,
+  reviewHasInfoPane,
+} from "../extensions/default/ui/reviewInfo";
 import { maxFileHeaderStatsWidth } from "./lib/fileHeader";
 import { setMouseCapture } from "./lib/mouseCapture";
 import { openSelectedFileInEditor } from "./lib/openInEditor";
@@ -696,6 +700,10 @@ export function App({
     () => paneLayout.panes.map(({ pane }) => pane.key),
     [paneLayout.panes],
   );
+  // The View menu offers the review-info toggle only for reviews that have that pane.
+  const reviewInfoPaneVisible = reviewHasInfoPane(bootstrap.review ?? null)
+    ? visiblePaneKeys.some((key) => BUNDLED_REVIEW_INFO_PANE_KEYS.includes(key))
+    : undefined;
   const { activePaneKey, activatePane, activateReview, paneSurfaceRef, reviewSurfaceRef } =
     useActivePaneController({ renderer, visiblePaneKeys });
 
@@ -1603,6 +1611,7 @@ export function App({
     copyDecorations,
     layoutMode,
     filesPaneVisible,
+    reviewInfoPaneVisible,
     showAgentNotes,
     showHelp,
     showHunkHeaders,
