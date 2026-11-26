@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act, forwardRef, useImperativeHandle, useState } from "react";
 import { createTestDiffFile } from "../../../../../../../test/helpers/diff-helpers";
+import { fileRowId } from "../../../../ui/lib/ids";
 import { resolveTheme } from "../../../../ui/themes";
 import { toReadOnlyFileViews } from "../../../events";
 import { FlexFileSidebar } from "./FileSidebars";
@@ -24,35 +25,38 @@ const files = toReadOnlyFileViews(
 
 interface SidebarSelectionHandle {
   select(id: string): void;
+  setWidth(width: number): void;
 }
 
 /** Host the bundled sidebar behind a selection setter so tests drive it like the review does. */
-const SidebarSelectionHarness = forwardRef<SidebarSelectionHandle, { initialFileId: string }>(
-  function SidebarSelectionHarness({ initialFileId }, ref) {
-    const [selectedFileId, setSelectedFileId] = useState(initialFileId);
-    useImperativeHandle(ref, () => ({ select: setSelectedFileId }), []);
-    return (
-      <FlexFileSidebar
-        files={files}
-        selectedFileId={selectedFileId}
-        selectedHunkIndex={0}
-        reviewGeneration="test-review"
-        theme={resolveTheme("github-dark-default", null)}
-        width={30}
-        keybindings={{ matches: () => false, getKeys: () => [] }}
-        actions={{
-          copyText: () => false,
-          selectFile: () => {},
-          selectHunk: () => {},
-          revealLine: () => {},
-          notify: () => {},
-          setPresentationScope: () => false,
-          clearPresentationScope: () => {},
-        }}
-      />
-    );
-  },
-);
+const SidebarSelectionHarness = forwardRef<
+  SidebarSelectionHandle,
+  { initialFileId: string; initialWidth?: number }
+>(function SidebarSelectionHarness({ initialFileId, initialWidth = 30 }, ref) {
+  const [selectedFileId, setSelectedFileId] = useState(initialFileId);
+  const [width, setWidth] = useState(initialWidth);
+  useImperativeHandle(ref, () => ({ select: setSelectedFileId, setWidth }), []);
+  return (
+    <FlexFileSidebar
+      files={files}
+      selectedFileId={selectedFileId}
+      selectedHunkIndex={0}
+      reviewGeneration="test-review"
+      theme={resolveTheme("github-dark-default", null)}
+      width={width}
+      keybindings={{ matches: () => false, getKeys: () => [] }}
+      actions={{
+        copyText: () => false,
+        selectFile: () => {},
+        selectHunk: () => {},
+        revealLine: () => {},
+        notify: () => {},
+        setPresentationScope: () => false,
+        clearPresentationScope: () => {},
+      }}
+    />
+  );
+});
 
 /** Return the sidebar row carrying the selected-file marker, if one is on screen. */
 function selectedRow(frame: string) {
@@ -60,7 +64,7 @@ function selectedRow(frame: string) {
 }
 
 /** Mount a sidebar with controllable selection, viewport and mouse input. */
-async function renderSidebar(initialFileId: string) {
+async function renderSidebar(initialFileId: string, initialWidth = 30) {
   const handle: { current: SidebarSelectionHandle | null } = { current: null };
   const setup = await testRender(
     <SidebarSelectionHarness
@@ -68,6 +72,7 @@ async function renderSidebar(initialFileId: string) {
         handle.current = value;
       }}
       initialFileId={initialFileId}
+      initialWidth={initialWidth}
     />,
     { width: 36, height: FRAME_ROWS },
   );
@@ -113,16 +118,88 @@ async function renderSidebar(initialFileId: string) {
     });
   };
 
+  /** Switch between compact and hierarchical projections without replacing the scrollbox. */
+  const changeWidth = async (width: number) => {
+    await act(async () => {
+      handle.current?.setWidth(width);
+      await setup.renderOnce();
+    });
+  };
+
+  /** Collapse the directory at the top of the hierarchical projection with mouse input. */
+  const collapseDirectory = async () => {
+    await act(async () => {
+      await setup.mockMouse.click(4, 0);
+      await setup.renderOnce();
+    });
+  };
+
   const destroy = async () => {
     await act(async () => {
       setup.renderer.destroy();
     });
   };
 
-  return { selectWithoutFrame, selectAndSettle, frame, resize, scrollUp, destroy };
+  return {
+    selectWithoutFrame,
+    selectAndSettle,
+    frame,
+    resize,
+    scrollUp,
+    changeWidth,
+    collapseDirectory,
+    destroy,
+  };
 }
 
 describe("FlexFileSidebar selected-row reveal", () => {
+  test("does not dismantle initial overscan when layout measures a shorter pane", async () => {
+    const setup = await testRender(
+      <box height={6}>
+        <SidebarSelectionHarness initialFileId={fileId(0)} />
+      </box>,
+      { width: 36, height: FRAME_ROWS },
+    );
+    try {
+      const initialRow = setup.renderer.root.findDescendantById(fileRowId(fileId(10)));
+      expect(initialRow).toBeDefined();
+      await act(async () => {
+        await setup.renderOnce();
+        await setup.renderOnce();
+      });
+
+      expect(setup.renderer.root.findDescendantById(fileRowId(fileId(10)))).toBe(initialRow);
+      expect(setup.renderer.root.findDescendantById(fileRowId(fileId(20)))).toBeUndefined();
+      expect(selectedRow(setup.captureCharFrame())).toContain(`${fileId(0)}.ts`);
+    } finally {
+      await act(async () => {
+        setup.renderer.destroy();
+      });
+    }
+  });
+
+  test("preserves directory collapse and expands it for held navigation across projections", async () => {
+    const sidebar = await renderSidebar(fileId(0), 36);
+    try {
+      await sidebar.collapseDirectory();
+      const collapsed = await sidebar.frame();
+      expect(collapsed).toContain("40 files");
+      expect(selectedRow(collapsed)).toBeUndefined();
+      expect(selectedRow(await sidebar.frame())).toBeUndefined();
+
+      for (let index = 1; index <= 25; index += 1) {
+        await sidebar.selectWithoutFrame(fileId(index));
+      }
+      expect(selectedRow(await sidebar.frame())).toContain(`${fileId(25)}.ts`);
+      await sidebar.changeWidth(30);
+      expect(selectedRow(await sidebar.frame())).toContain(`${fileId(25)}.ts`);
+      await sidebar.changeWidth(36);
+      expect(selectedRow(await sidebar.frame())).toContain(`${fileId(25)}.ts`);
+    } finally {
+      await sidebar.destroy();
+    }
+  });
+
   test("follows an unhurried walk down the list", async () => {
     const sidebar = await renderSidebar(fileId(0));
     try {

@@ -70,11 +70,21 @@ describe("PTY sidebar selection follow", () => {
       await Bun.sleep(250);
       expect(selectedSidebarFile(await session.text({ immediate: true }))).toBeNull();
 
+      // Navigation resumes following after manual scrolling away from the selected row.
+      session.writeRaw(".");
+      await harness.waitForSnapshot(
+        session,
+        (text) => selectedSidebarFile(text) === "file-51.ts",
+        5_000,
+      );
+      session.writeRaw("\u001b[<64;5;8M".repeat(12));
+      await harness.waitForSnapshot(session, (text) => selectedSidebarFile(text) === null, 5_000);
+
       session.resize({ cols: 100, rows: 24 });
       await Bun.sleep(250);
       await harness.waitForSnapshot(
         session,
-        (text) => selectedSidebarFile(text) === "file-50.ts",
+        (text) => selectedSidebarFile(text) === "file-51.ts",
         5_000,
       );
     } finally {
