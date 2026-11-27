@@ -24,15 +24,19 @@ import { TestAppHost as AppHost } from "../../../../test/helpers/app-host";
 
 const tempDirs: string[] = [];
 const originalConfigHome = process.env.XDG_CONFIG_HOME;
+const originalStateHome = process.env.XDG_STATE_HOME;
 
 beforeEach(() => {
   // Trust decisions live in the global state file; keep every test off the developer's real one.
   process.env.XDG_CONFIG_HOME = createTempDir("hunk-status-line-xdg-");
+  process.env.XDG_STATE_HOME = createTempDir("hunk-status-line-state-");
 });
 
 afterEach(async () => {
   if (originalConfigHome === undefined) delete process.env.XDG_CONFIG_HOME;
   else process.env.XDG_CONFIG_HOME = originalConfigHome;
+  if (originalStateHome === undefined) delete process.env.XDG_STATE_HOME;
+  else process.env.XDG_STATE_HOME = originalStateHome;
   for (const dir of tempDirs.splice(0)) {
     await removeTestDirectory(dir);
   }
