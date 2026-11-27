@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
 import { removeTestDirectory } from "../../../../test/helpers/filesystem";
@@ -56,6 +56,12 @@ function loadAppBootstrap(...args: Parameters<typeof loadCoreAppBootstrap>): Pro
 
 const tempDirs: string[] = [];
 const originalXdgConfigHome = process.env.XDG_CONFIG_HOME;
+const originalXdgStateHome = process.env.XDG_STATE_HOME;
+
+beforeEach(() => {
+  // Trust decisions live in the global state file; keep every test off the developer's real one.
+  process.env.XDG_STATE_HOME = createTempDir("hunk-apphost-state-");
+});
 
 afterEach(async () => {
   for (const dir of tempDirs.splice(0)) {
@@ -65,6 +71,11 @@ afterEach(async () => {
     delete process.env.XDG_CONFIG_HOME;
   } else {
     process.env.XDG_CONFIG_HOME = originalXdgConfigHome;
+  }
+  if (originalXdgStateHome === undefined) {
+    delete process.env.XDG_STATE_HOME;
+  } else {
+    process.env.XDG_STATE_HOME = originalXdgStateHome;
   }
 });
 
@@ -1220,8 +1231,6 @@ export default function (hunk) {
 async function grantTrustAndCollectProbeEvents(repo: string) {
   const logPath = join(repo, "probe.log");
   writeProbeExtension(join(repo, ".hunk", "extensions", "probe.ts"), logPath);
-  // Trust decisions live in the global state file; keep this test off the
-  // developer's real one.
   useTempConfigHome();
 
   const bootstrap = await loadAppBootstrap(

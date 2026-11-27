@@ -736,8 +736,14 @@ test("blocks reopening until dirty-quit cancellation settles", async () => {
     await setup.renderOnce();
     expect(setup.captureCharFrame()).toContain("Save view preferences?");
 
-    await act(async () => setup.mockInput.pressKey("escape"));
+    // OpenTUI's stdin parser holds a lone ESC for 20 ms in case an escape sequence follows. Wait
+    // past that so the next Enter is not parsed with it as meta+return, which saves.
+    await act(async () => {
+      setup.mockInput.pressEscape();
+      await Bun.sleep(60);
+    });
     await setup.renderOnce();
+    expect(setup.captureCharFrame()).not.toContain("Save view preferences?");
     await act(async () => setup.mockInput.pressEnter());
     expect(setup.captureCharFrame()).not.toContain("Save view preferences?");
 
